@@ -1,0 +1,33 @@
+# Control de versiones y editores
+.git/
+.github/
+.vscode/
+.idea/
+
+# Secretos y configuración local
+.env
+.env.*
+
+# Artefactos locales de Go
+/bin/
+/dist/
+/build/
+/tmp/
+*.test
+*.out
+coverage.*
+
+# Terraform: estado, proveedores y variables locales
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+
+# Infraestructura que no necesita la imagen Go
+/terraform/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
