@@ -1,0 +1,74 @@
+# Compilación y binarios
+/bin/
+/dist/
+/build/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Temporales
+/tmp/
+
+# Archivos temporales y cobertura
+coverage.out
+coverage.html
+*.prof
+*.pprof
+
+# Variables de entorno y secretos locales
+.env
+.env.*
+!.env.example
+
+# Terraform
+
+# Proveedores y módulos descargados localmente
+**/.terraform/*
+
+# Estado de Terraform (puede contener secretos)
+*.tfstate
+*.tfstate.*
+
+# Planes guardados
+*.tfplan
+tfplan
+tfplan.*
+
+# Variables locales (pueden contener secretos)
+*.tfvars
+*.tfvars.json
+!*.example.tfvars
+
+# Archivos de override locales
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Archivos temporales y logs
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+
+# Configuración local de Terraform CLI
+.terraformrc
+terraform.rc
+
+# Editores y sistema operativo
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains IDEs
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+Desktop.ini
