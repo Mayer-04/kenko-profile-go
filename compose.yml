@@ -1,12 +1,17 @@
 services:
   mongo:
+    depends_on:
+      mongo-keygen:
+        condition: service_completed_successfully
     image: mongo:8.3-noble
     container_name: kenko-mongo
     # reinicia el contenedor si falla, salvo que lo hayas detenido manualmente.
     restart: unless-stopped
     stop_grace_period: 60s
 
-    command: ["--auth", "--wiredTigerCacheSizeGB", "1"]
+    # D9-A: replica set de un nodo para transacciones multidocumento en local.
+    # (Con --auth, el replica set exige --keyFile: ver volumen mongo_key.)
+    command: ["--auth", "--replSet", "kenkoRs", "--keyFile", "/key/mongo-keyfile", "--bind_ip_all", "--wiredTigerCacheSizeGB", "1"]
 
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?define MONGO_ROOT_USER en .env}
@@ -18,6 +23,7 @@ services:
 
     volumes:
       - mongo_data:/data/db
+      - mongo_key:/key:ro
       - ./init:/docker-entrypoint-initdb.d:ro
 
     ports:
@@ -52,5 +58,138 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Genera el keyFile del replica set con permisos 600 y dueño mongodb (999).
+  # Se ejecuta como root dentro del contenedor para poder hacer chown.
+  mongo-keygen:
+    image: mongo:8.3-noble
+    container_name: kenko-mongo-keygen
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ ! -s /key/mongo-keyfile ]; then
+          head -c 756 /dev/urandom | base64 > /key/mongo-keyfile
+          chmod 600 /key/mongo-keyfile
+          chown 999:999 /key/mongo-keyfile
+          echo "keyFile generado"
+        else
+          echo "keyFile existente"
+        fi
+    volumes:
+      - mongo_key:/key
+    security_opt:
+      - no-new-privileges:true
+
+  # Inicia el replica set una sola vez (idempotente: ignora "already initialized").
+  mongo-init:
+    image: mongo:8.3-noble
+    container_name: kenko-mongo-init
+    restart: "no"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'try { rs.initiate({_id:"kenkoRs", members:[{_id:0, host:"mongo:27017"}]}) } catch (e) { if (!/already initialized/.test(e.message)) throw e }' && \
+        mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'quit(db.adminCommand({replSetGetStatus: 1}).ok === 1 ? 0 : 1)'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?define MONGO_ROOT_USER en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?define MONGO_ROOT_PASSWORD en .env}
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build: .
+    container_name: kenko-profile-api
+    user: ${UID:-1000}:${GID:-1000}
+    restart: unless-stopped
+    command: ["/app/api"]
+    env_file: .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_CONFIG_FILE: /aws/config
+      AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
+      MONGODB_URI: mongodb://${MONGO_APP_USER:?define MONGO_APP_USER en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DB:?define MONGO_APP_DB en .env}?authSource=${MONGO_APP_DB:?define MONGO_APP_DB en .env}
+    ports:
+      - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${HOME}/.aws:/aws:ro
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  worker:
+    build: .
+    container_name: kenko-profile-worker
+    user: ${UID:-1000}:${GID:-1000}
+    restart: unless-stopped
+    command: ["/app/worker"]
+    env_file: .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_CONFIG_FILE: /aws/config
+      AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
+      MONGODB_URI: mongodb://${MONGO_APP_USER:?define MONGO_APP_USER en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DB:?define MONGO_APP_DB en .env}?authSource=${MONGO_APP_DB:?define MONGO_APP_DB en .env}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${HOME}/.aws:/aws:ro
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  relay:
+    build: .
+    container_name: kenko-profile-relay
+    user: ${UID:-1000}:${GID:-1000}
+    restart: unless-stopped
+    command: ["/app/relay"]
+    env_file: .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_CONFIG_FILE: /aws/config
+      AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
+      MONGODB_URI: mongodb://${MONGO_APP_USER:?define MONGO_APP_USER en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DB:?define MONGO_APP_DB en .env}?authSource=${MONGO_APP_DB:?define MONGO_APP_DB en .env}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      mongo-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${HOME}/.aws:/aws:ro
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   mongo_data:
+  mongo_key:
