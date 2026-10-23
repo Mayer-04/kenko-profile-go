@@ -1,56 +1,35 @@
 services:
-  mongo:
+  mongodb:
     image: mongo:8.3-noble
     container_name: kenko-mongo
-    # reinicia el contenedor si falla, salvo que lo hayas detenido manualmente.
     restart: unless-stopped
     stop_grace_period: 60s
 
-    command: ["--auth", "--wiredTigerCacheSizeGB", "1"]
-
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?define MONGO_ROOT_USER en .env}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?define MONGO_ROOT_PASSWORD en .env}
-      # Usados por el script de init para crear el usuario de la aplicación
-      MONGO_APP_DB: ${MONGO_APP_DB:?define MONGO_APP_DB en .env}
-      MONGO_APP_USER: ${MONGO_APP_USER:?define MONGO_APP_USER en .env}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}
-
-    volumes:
-      - mongo_data:/data/db
-      - ./init:/docker-entrypoint-initdb.d:ro
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Falta usuario administrador}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Falta contraseña administradora}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:?Falta usuario de aplicación}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Falta contraseña de aplicación}
+      MONGO_APP_DATABASE: ${MONGO_APP_DATABASE:?Falta nombre de base de datos}
 
     ports:
       - "127.0.0.1:27017:27017"
 
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/01-init-mongo.js:ro
+
     healthcheck:
       test:
-        [
-          "CMD",
-          "mongosh",
-          "--quiet",
-          "--eval",
-          "quit(db.adminCommand('ping').ok ? 0 : 1)",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "quit(db.adminCommand('ping').ok ? 0 : 2)"
+      interval: 30s
+      timeout: 10s
+      retries: 3
       start_period: 30s
 
-    security_opt:
-      - no-new-privileges:true
-
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2g
-
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
 volumes:
-  mongo_data:
+  mongodb_data:

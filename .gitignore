@@ -72,3 +72,5 @@ terraform.rc
 # Windows
 Thumbs.db
 Desktop.ini
+
+/secrets/
