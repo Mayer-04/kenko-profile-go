@@ -1,9 +1,24 @@
 services:
+  # MongoDB local como replica set de un nodo: habilita las transacciones
+  # multidocumento que necesita el worker (sección 8.1, opción A de D9).
+  # Los datos del volumen se conservan.
   mongodb:
     image: mongo:8.3-noble
     container_name: kenko-mongo
     restart: unless-stopped
     stop_grace_period: 60s
+
+    # La clave de réplica se copia con dueño y permisos correctos antes de
+    # arrancar mongod: el proceso corre como usuario mongodb y no puede leer
+    # el montaje de solo lectura del host.
+    entrypoint:
+      - sh
+      - -c
+      - |
+        cp /keys/replica.key /tmp/replica.key
+        chown mongodb:mongodb /tmp/replica.key
+        chmod 400 /tmp/replica.key
+        exec docker-entrypoint.sh mongod --replSet rs0 --keyFile /tmp/replica.key
 
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Falta usuario administrador}
@@ -18,6 +33,7 @@ services:
     volumes:
       - mongodb_data:/data/db
       - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/01-init-mongo.js:ro
+      - ./mongo/replica.key:/keys/replica.key:ro
 
     healthcheck:
       test:
@@ -30,6 +46,147 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # Contenedor de un solo uso: inicia el replica set rs0 si aún no lo está y
+  # espera a que haya primaria. Los servicios de la app esperan a que termine.
+  #
+  # Nota: en el primer arranque con volumen vacío, la fase de inicialización
+  # de la imagen de MongoDB usa un mongod temporal que solo escucha en
+  # localhost; hay que reintentar hasta que el mongod real escucha en la red.
+  mongo-replica-init:
+    image: mongo:8.3-noble
+    container_name: kenko-mongo-replica-init
+    restart: "no"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?Falta usuario administrador}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?Falta contraseña administradora}
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "Esperando a que MongoDB acepte conexiones en la red..."
+        intentos=0
+        while [ "$$intentos" -lt 120 ]; do
+          if mongosh --quiet --host mongodb \
+            --username "$$MONGO_INITDB_ROOT_USERNAME" \
+            --password "$$MONGO_INITDB_ROOT_PASSWORD" \
+            --authenticationDatabase admin \
+            --eval 'quit(db.adminCommand("ping").ok ? 0 : 3)' >/dev/null 2>&1; then
+            break
+          fi
+          intentos=$$((intentos + 1))
+          sleep 1
+        done
+        if [ "$$intentos" -ge 120 ]; then
+          echo "No se pudo conectar a MongoDB en 120 segundos" >&2
+          exit 1
+        fi
+        echo "Inicializando el replica set rs0 (un nodo)..."
+        mongosh --quiet --host mongodb \
+          --username "$$MONGO_INITDB_ROOT_USERNAME" \
+          --password "$$MONGO_INITDB_ROOT_PASSWORD" \
+          --authenticationDatabase admin \
+          --eval '
+            let iniciado = false;
+            try { rs.status(); iniciado = true; } catch (e) { iniciado = false; }
+            if (!iniciado) {
+              rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] });
+            }
+            const limite = Date.now() + 60000;
+            while (!db.hello().isWritablePrimary && Date.now() < limite) {
+              sleep(200);
+            }
+            if (!db.hello().isWritablePrimary) {
+              throw new Error("rs0 no alcanzo el estado de primaria");
+            }
+            print("Replica set rs0 listo: primaria en mongodb:27017");
+          '
+
+  # API REST del servicio (sección 9). Desarrollo en el host con air; este
+  # servicio es para levantar todo con Docker (E1).
+  api:
+    build: .
+    container_name: kenko-profile-api
+    restart: unless-stopped
+    command: ["/usr/local/bin/api"]
+    env_file: .env
+    environment:
+      # Dentro de la red de Docker se llega a MongoDB por el nombre del
+      # servicio, con descubrimiento normal de la réplica (sin
+      # directConnection, que es solo para el host).
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_APP_DATABASE}?authSource=${MONGO_APP_DATABASE}
+      # Credenciales de AWS: exporta AWS_ACCESS_KEY_ID y AWS_SECRET_ACCESS_KEY
+      # (o AWS_SESSION_TOKEN) antes de lanzar docker compose up.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      mongo-replica-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - http://127.0.0.1:8080/healthz
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Worker: consume la cola de Authentication (sección 5, D1-A).
+  worker:
+    build: .
+    container_name: kenko-profile-worker
+    restart: unless-stopped
+    command: ["/usr/local/bin/worker"]
+    env_file: .env
+    environment:
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_APP_DATABASE}?authSource=${MONGO_APP_DATABASE}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    # Credenciales del AWS CLI si no se exportan como variables de entorno.
+    volumes:
+      - type: bind
+        source: ${HOME}/.aws
+        target: /aws-readonly
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      mongo-replica-init:
+        condition: service_completed_successfully
+
+  # Relay: publica el outbox en EventBridge (sección 6, D3-A).
+  relay:
+    build: .
+    container_name: kenko-profile-relay
+    restart: unless-stopped
+    command: ["/usr/local/bin/relay"]
+    env_file: .env
+    environment:
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_APP_DATABASE}?authSource=${MONGO_APP_DATABASE}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    # Credenciales del AWS CLI si no se exportan como variables de entorno.
+    volumes:
+      - type: bind
+        source: ${HOME}/.aws
+        target: /aws-readonly
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      mongo-replica-init:
+        condition: service_completed_successfully
 
 volumes:
   mongodb_data:
