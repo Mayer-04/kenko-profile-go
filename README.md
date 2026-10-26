@@ -34,4 +34,4 @@ go tool air
 - El `PATCH` solo acepta `phone` y `address` completo (`{line, city}`); rechaza `email`, `password` y cualquier otro campo. No publica eventos.
 - Idempotencia por `processed_events.eventId` (D4-A) + unicidad de `_id = userId`.
 - Limpieza del outbox con TTL de 30 días sobre `published_at` (D6-A).
-- D8-B: el worker también acepta `UserEmailChanged` (requiere que Authentication lo publique y que se amplíe el `detail-type` de la regla `kenko-dev-auth-to-profile`; cambio fuera de este repo).
+- El worker consume `UserRegistered` y `EmailChanged` de Authentication por la misma cola; el cambio de email actualiza la proyección por `userId` (hecho consumado, sin publicar eventos).

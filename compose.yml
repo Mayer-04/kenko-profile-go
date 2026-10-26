@@ -14,11 +14,11 @@ services:
     command: ["--auth", "--replSet", "kenkoRs", "--keyFile", "/key/mongo-keyfile", "--bind_ip_all", "--wiredTigerCacheSizeGB", "1"]
 
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?define MONGO_ROOT_USER en .env}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?define MONGO_ROOT_PASSWORD en .env}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?define MONGO_INITDB_ROOT_USERNAME en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?define MONGO_INITDB_ROOT_PASSWORD en .env}
       # Usados por el script de init para crear el usuario de la aplicación
-      MONGO_APP_DB: ${MONGO_APP_DB:?define MONGO_APP_DB en .env}
-      MONGO_APP_USER: ${MONGO_APP_USER:?define MONGO_APP_USER en .env}
+      MONGO_APP_DB: ${MONGO_APP_DATABASE:?define MONGO_APP_DB en .env}
+      MONGO_APP_USER: ${MONGO_APP_USERNAME:?define MONGO_APP_USER en .env}
       MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}
 
     volumes:
@@ -96,8 +96,8 @@ services:
         mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'try { rs.initiate({_id:"kenkoRs", members:[{_id:0, host:"mongo:27017"}]}) } catch (e) { if (!/already initialized/.test(e.message)) throw e }' && \
         mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'quit(db.adminCommand({replSetGetStatus: 1}).ok === 1 ? 0 : 1)'
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:?define MONGO_ROOT_USER en .env}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?define MONGO_ROOT_PASSWORD en .env}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?define MONGO_INITDB_ROOT_USERNAME en .env}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?define MONGO_INITDB_ROOT_PASSWORD en .env}
     security_opt:
       - no-new-privileges:true
 
@@ -114,7 +114,7 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       AWS_CONFIG_FILE: /aws/config
       AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
-      MONGODB_URI: mongodb://${MONGO_APP_USER:?define MONGO_APP_USER en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DB:?define MONGO_APP_DB en .env}?authSource=${MONGO_APP_DB:?define MONGO_APP_DB en .env}
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME:?define MONGO_APP_USERNAME en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DATABASE:?define MONGO_APP_DATABASE en .env}?authSource=${MONGO_APP_DATABASE:?define MONGO_APP_DATABASE en .env}
     ports:
       - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
     depends_on:
@@ -145,7 +145,7 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       AWS_CONFIG_FILE: /aws/config
       AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
-      MONGODB_URI: mongodb://${MONGO_APP_USER:?define MONGO_APP_USER en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DB:?define MONGO_APP_DB en .env}?authSource=${MONGO_APP_DB:?define MONGO_APP_DB en .env}
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME:?define MONGO_APP_USERNAME en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DATABASE:?define MONGO_APP_DATABASE en .env}?authSource=${MONGO_APP_DATABASE:?define MONGO_APP_DATABASE en .env}
     depends_on:
       mongo:
         condition: service_healthy
@@ -174,7 +174,7 @@ services:
       AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
       AWS_CONFIG_FILE: /aws/config
       AWS_SHARED_CREDENTIALS_FILE: /aws/credentials
-      MONGODB_URI: mongodb://${MONGO_APP_USER:?define MONGO_APP_USER en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DB:?define MONGO_APP_DB en .env}?authSource=${MONGO_APP_DB:?define MONGO_APP_DB en .env}
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME:?define MONGO_APP_USERNAME en .env}:${MONGO_APP_PASSWORD:?define MONGO_APP_PASSWORD en .env}@mongo:27017/${MONGO_APP_DATABASE:?define MONGO_APP_DATABASE en .env}?authSource=${MONGO_APP_DATABASE:?define MONGO_APP_DATABASE en .env}
     depends_on:
       mongo:
         condition: service_healthy

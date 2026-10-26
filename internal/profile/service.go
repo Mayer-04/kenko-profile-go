@@ -52,9 +52,11 @@ func (s *Service) RegisterFromEvent(ctx context.Context, evt events.UserRegister
 	return profileID, false, nil
 }
 
-// ApplyEmailChanged procesa UserEmailChanged (D8-B).
-func (s *Service) ApplyEmailChanged(ctx context.Context, evt events.UserEmailChanged) error {
-	updated, duplicated, err := s.store.ApplyEmailChanged(ctx, evt)
+// ApplyEmailChanged procesa EmailChanged (contrato v1, hecho consumado).
+// Solo registra IDs, nunca emails (11.3). Todos los casos salvo error de
+// infra son terminales: el worker borra el mensaje (no reintenta/DLQ).
+func (s *Service) ApplyEmailChanged(ctx context.Context, evt events.EmailChanged) error {
+	updated, duplicated, notFound, err := s.store.ApplyEmailChanged(ctx, evt)
 	if err != nil {
 		s.log.Error("profile.email_change_failed",
 			"eventId", evt.Metadata.EventID,
@@ -64,6 +66,11 @@ func (s *Service) ApplyEmailChanged(ctx context.Context, evt events.UserEmailCha
 	switch {
 	case duplicated:
 		s.log.Info("profile.duplicate_skipped",
+			"eventId", evt.Metadata.EventID,
+			"correlationId", evt.Metadata.CorrelationID)
+	case notFound:
+		s.log.Info("profile.email_user_not_found",
+			"profileId", evt.Data.UserID,
 			"eventId", evt.Metadata.EventID,
 			"correlationId", evt.Metadata.CorrelationID)
 	case updated:

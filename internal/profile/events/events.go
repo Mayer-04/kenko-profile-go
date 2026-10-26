@@ -5,6 +5,7 @@ package events
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -58,16 +59,20 @@ type UserRegistered struct {
 	Data     UserData `json:"data" validate:"required"`
 }
 
-// EmailChangedData es el data de UserEmailChanged (D8-B).
+// EmailChangedData es el data de EmailChanged (contrato v1 congelado con Auth).
+// userId es la clave (UUID v7 de Auth, igual al _id de la proyección).
+// oldEmail es opcional y solo sirve para verificar/auditar; newEmail es el
+// hecho consumado a aplicar. firstName es solo informativo.
 type EmailChangedData struct {
-	UserID        string `json:"userId" validate:"required,uuid"`
-	Email         string `json:"email" validate:"required,email"`
-	EmailVerified bool   `json:"emailVerified"`
-	OccurredAt    string `json:"occurredAt" validate:"required"`
+	UserID    string `json:"userId" validate:"required,uuid"`
+	OldEmail  string `json:"oldEmail" validate:"omitempty,email"`
+	NewEmail  string `json:"newEmail" validate:"required,email"`
+	FirstName string `json:"firstName" validate:"omitempty"`
 }
 
-// UserEmailChanged es el evento de Authentication al cambiar el email.
-type UserEmailChanged struct {
+// EmailChanged es el evento de Authentication al cambiar el email
+// (DetailType "EmailChanged", source "kenko.auth").
+type EmailChanged struct {
 	Metadata Metadata         `json:"metadata" validate:"required"`
 	Data     EmailChangedData `json:"data" validate:"required"`
 }
@@ -105,20 +110,26 @@ func ParseUserRegistered(detail json.RawMessage) (UserRegistered, error) {
 	return evt, nil
 }
 
-// ParseUserEmailChanged valida el evento de cambio de email (D8-B).
-func ParseUserEmailChanged(detail json.RawMessage) (UserEmailChanged, error) {
-	var evt UserEmailChanged
+// ParseEmailChanged valida el evento de cambio de email (contrato v1).
+// Recencia por metadata.occurredAt (el data no trae fecha propia).
+func ParseEmailChanged(detail json.RawMessage) (EmailChanged, error) {
+	var evt EmailChanged
 	if err := json.Unmarshal(detail, &evt); err != nil {
-		return UserEmailChanged{}, fmt.Errorf("userEmailChanged: %w", err)
+		return EmailChanged{}, fmt.Errorf("emailChanged: %w", err)
 	}
+	evt.Metadata.EventID = strings.TrimSpace(evt.Metadata.EventID)
+	evt.Metadata.EventVersion = strings.TrimSpace(evt.Metadata.EventVersion)
+	evt.Metadata.OccurredAt = strings.TrimSpace(evt.Metadata.OccurredAt)
+	evt.Metadata.CorrelationID = strings.TrimSpace(evt.Metadata.CorrelationID)
+	evt.Data.UserID = strings.TrimSpace(evt.Data.UserID)
+	evt.Data.OldEmail = strings.TrimSpace(evt.Data.OldEmail)
+	evt.Data.NewEmail = strings.TrimSpace(evt.Data.NewEmail)
+	evt.Data.FirstName = strings.TrimSpace(evt.Data.FirstName)
 	if err := validate.Struct(evt); err != nil {
-		return UserEmailChanged{}, fmt.Errorf("userEmailChanged: %w", err)
+		return EmailChanged{}, fmt.Errorf("emailChanged: %w", err)
 	}
 	if _, err := time.Parse(time.RFC3339, evt.Metadata.OccurredAt); err != nil {
-		return UserEmailChanged{}, fmt.Errorf("userEmailChanged: occurredAt inválido: %w", err)
-	}
-	if _, err := time.Parse(time.RFC3339, evt.Data.OccurredAt); err != nil {
-		return UserEmailChanged{}, fmt.Errorf("userEmailChanged: data.occurredAt inválido: %w", err)
+		return EmailChanged{}, fmt.Errorf("emailChanged: occurredAt inválido: %w", err)
 	}
 	return evt, nil
 }

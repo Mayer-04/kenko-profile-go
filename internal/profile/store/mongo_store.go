@@ -168,51 +168,89 @@ func (s *MongoStore) CreateFromRegistration(ctx context.Context, evt events.User
 	return evt.Data.UserID, duplicated, nil
 }
 
-// ApplyEmailChanged implementa D8-B: actualiza email solo si el evento es
-// más reciente que el último aplicado. Idempotente por eventId.
-func (s *MongoStore) ApplyEmailChanged(ctx context.Context, evt events.UserEmailChanged) (bool, bool, error) {
+// ApplyEmailChanged aplica el hecho consumado EmailChanged (contrato v1):
+// actualiza el email de la proyección por userId de forma idempotente.
+// - Idempotencia por eventId (processed_events): el duplicado no reaplica.
+// - Sin orden garantizado (bus estándar): solo aplica si metadata.occurredAt
+// es más reciente que email_occurred_at; si no, ignora como stale.
+// - oldEmail es opcional: si viene y no coincide con el email actual, no
+// actualiza (mismatch tratado como stale, sin PII en logs).
+// - Si la proyección no existe, registra processed y devuelve notFound=true
+// para que el worker lo consuma como terminal (sin reintento/DLQ).
+// - No publica ningún evento de salida.
+func (s *MongoStore) ApplyEmailChanged(ctx context.Context, evt events.EmailChanged) (updated, duplicated, notFound bool, err error) {
 	userBin, err := uuidBinary(evt.Data.UserID)
 	if err != nil {
-		return false, false, fmt.Errorf("%w: userId", profile.ErrInvalidPayload)
+		return false, false, false, fmt.Errorf("%w: userId", profile.ErrInvalidPayload)
 	}
-	evtAt, _ := time.Parse(time.RFC3339, evt.Data.OccurredAt)
+	evtAt, err := time.Parse(time.RFC3339, evt.Metadata.OccurredAt)
+	if err != nil {
+		return false, false, false, fmt.Errorf("%w: occurredAt", profile.ErrInvalidPayload)
+	}
+	evtAt = evtAt.UTC()
+	newEmail := strings.TrimSpace(evt.Data.NewEmail)
+	oldEmail := strings.TrimSpace(evt.Data.OldEmail)
+	if newEmail == "" {
+		return false, false, false, fmt.Errorf("%w: newEmail", profile.ErrInvalidPayload)
+	}
 	sess, err := s.client.StartSession()
 	if err != nil {
-		return false, false, err
+		return false, false, false, err
 	}
 	defer sess.EndSession(ctx)
 
-	var updated, duplicated bool
 	_, err = sess.WithTransaction(ctx, func(ctx context.Context) (any, error) {
-		updated, duplicated = false, false
+		updated, duplicated, notFound = false, false, false
 		if res := s.proc.FindOne(ctx, bson.M{"event_id": evt.Metadata.EventID}); res.Err() == nil {
 			duplicated = true
 			return nil, nil
 		} else if res.Err() != mongodriver.ErrNoDocuments {
 			return nil, res.Err()
 		}
-		updRes, err := s.profiles.UpdateOne(ctx,
-			bson.M{"_id": userBin, "email_occurred_at": bson.M{"$lt": evtAt.UTC()}},
+		markProcessed := func() error {
+			_, ierr := s.proc.InsertOne(ctx, profile.ProcessedEvent{
+				EventID:     evt.Metadata.EventID,
+				ProcessedAt: time.Now().UTC(),
+			})
+			return ierr
+		}
+		var cur profile.Profile
+		if ferr := s.profiles.FindOne(ctx, bson.M{"_id": userBin}).Decode(&cur); ferr != nil {
+			if ferr == mongodriver.ErrNoDocuments {
+				notFound = true
+				return nil, markProcessed()
+			}
+			return nil, ferr
+		}
+		// Evento más viejo que el estado actual: ignorar (sin orden FIFO).
+		if !cur.EmailOccurredAt.IsZero() && !evtAt.After(cur.EmailOccurredAt) {
+			return nil, markProcessed()
+		}
+		// Verificación opcional por oldEmail: solo userId es clave; si el
+		// remitente lo envió y no coincide, no se aplica (auditable como stale).
+		if oldEmail != "" && !strings.EqualFold(strings.TrimSpace(cur.Email), oldEmail) {
+			return nil, markProcessed()
+		}
+		updRes, uerr := s.profiles.UpdateOne(ctx,
+			bson.M{"_id": userBin, "$or": []bson.M{
+				{"email_occurred_at": bson.M{"$lt": evtAt}},
+				{"email_occurred_at": bson.M{"$exists": false}},
+				{"email_occurred_at": nil},
+			}},
 			bson.M{"$set": bson.M{
-				"email":             evt.Data.Email,
-				"email_verified":    evt.Data.EmailVerified,
-				"email_occurred_at": evtAt.UTC(),
+				"email":             newEmail,
+				"email_verified":    false,
+				"email_occurred_at": evtAt,
 				"updated_at":        time.Now().UTC(),
 			}},
 		)
-		if err != nil {
-			return nil, err
+		if uerr != nil {
+			return nil, uerr
 		}
 		updated = updRes.ModifiedCount == 1
-		if _, err := s.proc.InsertOne(ctx, profile.ProcessedEvent{
-			EventID:     evt.Metadata.EventID,
-			ProcessedAt: time.Now().UTC(),
-		}); err != nil {
-			return nil, err
-		}
-		return nil, nil
+		return nil, markProcessed()
 	})
-	return updated, duplicated, err
+	return updated, duplicated, notFound, err
 }
 
 // FindByID recupera el perfil por su id (GET /profiles/{id}).

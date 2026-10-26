@@ -22,7 +22,10 @@ type Store interface {
 	// transacción. Devuelve duplicated=true si el eventId ya se procesó.
 	CreateFromRegistration(ctx context.Context, evt events.UserRegistered, now time.Time) (profileID string, duplicated bool, err error)
 	// ApplyEmailChanged actualiza email si el evento es más reciente.
-	ApplyEmailChanged(ctx context.Context, evt events.UserEmailChanged) (updated bool, duplicated bool, err error)
+	// Clave solo por userId; oldEmail se usa para no aplicar si no coincide.
+	// Devuelve notFound=true si la proyección no existe (caso terminal:
+	// se registra processed y el worker borra el mensaje, sin reintento).
+	ApplyEmailChanged(ctx context.Context, evt events.EmailChanged) (updated bool, duplicated bool, notFound bool, err error)
 	FindByID(ctx context.Context, id string) (Profile, error)
 	Patch(ctx context.Context, id string, in PatchInput, now time.Time) (Profile, error)
 

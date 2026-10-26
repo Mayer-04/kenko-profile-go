@@ -105,8 +105,8 @@ func (w *Worker) processOne(ctx context.Context, m types.Message) {
 				"correlationId", evt.Metadata.CorrelationID)
 			return
 		}
-	case "UserEmailChanged":
-		evt, err := events.ParseUserEmailChanged(env.Detail)
+	case "EmailChanged":
+		evt, err := events.ParseEmailChanged(env.Detail)
 		if err != nil {
 			w.log.Warn("worker.invalid_message", "eventId", safeEventID(env.Detail))
 			return
@@ -123,7 +123,7 @@ func (w *Worker) processOne(ctx context.Context, m types.Message) {
 		w.log.Warn("worker.unknown_detail_type", "detailType", env.DetailType)
 		return
 	}
-	// Éxito o duplicado: eliminar con su ReceiptHandle (5.2).
+	// Éxito o terminal (duplicado/stale/no-existe): eliminar con su ReceiptHandle (5.2).
 	if _, err := w.sqs.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 		QueueUrl:      aws.String(w.queueURL),
 		ReceiptHandle: m.ReceiptHandle,
