@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/Mayer-04/kenko-profile-go/internal/profile"
@@ -132,22 +133,10 @@ func (w *Worker) processOne(ctx context.Context, m types.Message) {
 	}
 }
 
-// ExtendVisibility amplía el ocultamiento si el procesamiento lo necesita (5.1).
-func (w *Worker) ExtendVisibility(ctx context.Context, receipt string, seconds int32) error {
-	_, err := w.sqs.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
-		QueueUrl:          aws.String(w.queueURL),
-		ReceiptHandle:     aws.String(receipt),
-		VisibilityTimeout: seconds,
-	})
-	return err
-}
-
 func queueShort(url string) string {
 	// Solo el nombre de la cola, nunca credenciales.
-	for i := len(url) - 1; i >= 0; i-- {
-		if url[i] == '/' {
-			return url[i+1:]
-		}
+	if i := strings.LastIndex(url, "/"); i >= 0 {
+		return url[i+1:]
 	}
 	return url
 }

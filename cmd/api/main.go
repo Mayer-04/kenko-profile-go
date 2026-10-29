@@ -18,12 +18,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	deps, err := app.Wire(ctx)
-	if err != nil {
-		// Sin logger aún si falla la config; mensaje a stderr.
-		_, _ = os.Stderr.WriteString("api: init failed: " + err.Error() + "\n")
-		os.Exit(1)
-	}
+	deps := app.WireOrExit(ctx, "api")
 	defer deps.Mongo.Raw.Disconnect(context.Background()) //nolint:errcheck
 
 	e := echo.New()

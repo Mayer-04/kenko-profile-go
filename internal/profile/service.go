@@ -87,12 +87,22 @@ func (s *Service) ApplyEmailChanged(ctx context.Context, evt events.EmailChanged
 	return nil
 }
 
+// parseID valida que el id sea UUID (v4/v7). Devuelve el id recortado.
+func parseID(id string) (string, error) {
+	trimmed := strings.TrimSpace(id)
+	if _, err := uuid.FromString(trimmed); err != nil {
+		return "", ErrNotFound
+	}
+	return trimmed, nil
+}
+
 // GetByID recupera el perfil por su id.
 func (s *Service) GetByID(ctx context.Context, id string) (Profile, error) {
-	if _, err := uuid.FromString(strings.TrimSpace(id)); err != nil {
-		return Profile{}, ErrNotFound
+	trimmed, err := parseID(id)
+	if err != nil {
+		return Profile{}, err
 	}
-	return s.store.FindByID(ctx, id)
+	return s.store.FindByID(ctx, trimmed)
 }
 
 // ValidatePatch rechaza cualquier campo fuera de phone/address (4.2, 9),
@@ -150,10 +160,11 @@ func ValidatePatch(raw map[string]any) (PatchInput, error) {
 // Patch aplica la actualización (sin publicar eventos) y registra
 // solo el id y los nombres de campos (11.3).
 func (s *Service) Patch(ctx context.Context, id string, in PatchInput) (Profile, error) {
-	if _, err := uuid.FromString(strings.TrimSpace(id)); err != nil {
-		return Profile{}, ErrNotFound
+	trimmed, err := parseID(id)
+	if err != nil {
+		return Profile{}, err
 	}
-	p, err := s.store.Patch(ctx, id, in, time.Now().UTC())
+	p, err := s.store.Patch(ctx, trimmed, in, time.Now().UTC())
 	if err != nil {
 		s.log.Error("profile.patch_failed", "profileId", id)
 		return Profile{}, err

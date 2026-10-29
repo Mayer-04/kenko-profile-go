@@ -54,12 +54,17 @@ func wellFormedMongoURI(uri string) bool {
 // Load lee el entorno y aplica el orden de conexión de 8.3:
 // 1) MONGODB_URI (Docker) si disponible; 2) si no, MONGO_ATLAS_URI.
 func Load() (Config, error) {
+	// Compat: compose/.env usan MONGO_APP_DATABASE, código histórico usa MONGO_APP_DB.
+	mongoDB := getenv("MONGO_APP_DB", "")
+	if mongoDB == "" {
+		mongoDB = getenv("MONGO_APP_DATABASE", "kenko_eps")
+	}
 	cfg := Config{
 		Port:                getenv("PORT", "8080"),
 		AWSRegion:           getenv("AWS_REGION", "us-east-1"),
 		EventBusName:        getenv("EVENT_BUS_NAME", "kenko-dev-bus"),
 		ProfileQueueURL:     strings.TrimSpace(os.Getenv("PROFILE_QUEUE_URL")),
-		MongoDB:             getenv("MONGO_APP_DB", "kenko_eps"),
+		MongoDB:             mongoDB,
 		RelayPollInterval:   5 * time.Second,
 		RelayBatchSize:      10,
 		RelayClaimLease:     60 * time.Second,

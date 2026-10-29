@@ -14,11 +14,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	deps, err := app.Wire(ctx)
-	if err != nil {
-		_, _ = os.Stderr.WriteString("relay: init failed: " + err.Error() + "\n")
-		os.Exit(1)
-	}
+	deps := app.WireOrExit(ctx, "relay")
 	defer deps.Mongo.Raw.Disconnect(context.Background()) //nolint:errcheck
 
 	r := relay.New(

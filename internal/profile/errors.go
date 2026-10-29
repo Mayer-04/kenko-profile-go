@@ -7,5 +7,4 @@ var (
 	ErrNotFound       = errors.New("profile not found")
 	ErrInvalidPatch   = errors.New("patch contains immutable or unknown fields")
 	ErrInvalidPayload = errors.New("invalid event payload")
-	ErrDuplicate      = errors.New("duplicate event")
 )

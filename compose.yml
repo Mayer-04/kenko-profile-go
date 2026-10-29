@@ -60,6 +60,7 @@ services:
 
   # Genera el keyFile del replica set con permisos 600 y dueño mongodb (999).
   # Se ejecuta como root dentro del contenedor para poder hacer chown.
+  # keyFile en una sola línea (sin saltos): Mongo exige 6-1024 chars base64 usable.
   mongo-keygen:
     image: mongo:8.3-noble
     container_name: kenko-mongo-keygen
@@ -69,7 +70,7 @@ services:
       - -c
       - |
         if [ ! -s /key/mongo-keyfile ]; then
-          head -c 756 /dev/urandom | base64 > /key/mongo-keyfile
+          head -c 756 /dev/urandom | base64 | tr -d '\r\n' > /key/mongo-keyfile
           chmod 600 /key/mongo-keyfile
           chown 999:999 /key/mongo-keyfile
           echo "keyFile generado"
@@ -82,6 +83,8 @@ services:
       - no-new-privileges:true
 
   # Inicia el replica set una sola vez (idempotente: ignora "already initialized").
+  # Con reintentos: mongod puede aún no aceptar conexiones aunque el healthcheck
+  # haya pasado; sin loop el primer `up` falla con ECONNREFUSED (solo dev).
   mongo-init:
     image: mongo:8.3-noble
     container_name: kenko-mongo-init
@@ -93,8 +96,23 @@ services:
       - /bin/sh
       - -c
       - |
-        mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'try { rs.initiate({_id:"kenkoRs", members:[{_id:0, host:"mongo:27017"}]}) } catch (e) { if (!/already initialized/.test(e.message)) throw e }' && \
-        mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'quit(db.adminCommand({replSetGetStatus: 1}).ok === 1 ? 0 : 1)'
+        set -u
+        attempt=1
+        max_attempts=30
+        until mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'try { rs.initiate({_id:"kenkoRs", members:[{_id:0, host:"mongo:27017"}]}) } catch (e) { var m = (e && e.message) ? e.message : JSON.stringify(e); if (!/already initialized/.test(m)) throw e }'; do
+          if [ "$$attempt" -ge "$$max_attempts" ]; then echo "mongo-init: rs.initiate falló tras $$max_attempts intentos"; exit 1; fi
+          echo "mongo-init: rs.initiate intento $$attempt/$$max_attempts fallido, reintentando en 2s..."
+          attempt=$$((attempt+1))
+          sleep 2
+        done
+        attempt=1
+        until mongosh --quiet --host mongo -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --eval 'quit(db.adminCommand({replSetGetStatus: 1}).ok === 1 ? 0 : 1)'; do
+          if [ "$$attempt" -ge "$$max_attempts" ]; then echo "mongo-init: replSetGetStatus falló tras $$max_attempts intentos"; exit 1; fi
+          echo "mongo-init: replSetGetStatus intento $$attempt/$$max_attempts fallido, reintentando en 2s..."
+          attempt=$$((attempt+1))
+          sleep 2
+        done
+        echo "mongo-init: replica set listo"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:?define MONGO_INITDB_ROOT_USERNAME en .env}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?define MONGO_INITDB_ROOT_PASSWORD en .env}

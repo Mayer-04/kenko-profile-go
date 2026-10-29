@@ -43,6 +43,20 @@ func uuidBinary(s string) (bson.Binary, error) {
 	return platformmongo.UUIDToBinary(id), nil
 }
 
+// isProcessed revisa processed_events por eventId.
+// Devuelve true si ya se procesó, false si no existe.
+// Cualquier otro error se propaga tal cual.
+func (s *MongoStore) isProcessed(ctx context.Context, eventID string) (bool, error) {
+	res := s.proc.FindOne(ctx, bson.M{"event_id": eventID})
+	if res.Err() == nil {
+		return true, nil
+	}
+	if res.Err() != mongodriver.ErrNoDocuments {
+		return false, res.Err()
+	}
+	return false, nil
+}
+
 func profileCreatedPayload(p profile.Profile, meta map[string]string) bson.M {
 	return bson.M{
 		"metadata": bson.M{
@@ -128,13 +142,13 @@ func (s *MongoStore) CreateFromRegistration(ctx context.Context, evt events.User
 	_, err = sess.WithTransaction(ctx, func(ctx context.Context) (any, error) {
 		duplicated = false
 		// Idempotencia D4-A: reclamar eventId antes de insertar.
-		res := s.proc.FindOne(ctx, bson.M{"event_id": evt.Metadata.EventID})
-		if res.Err() == nil {
+		seen, err := s.isProcessed(ctx, evt.Metadata.EventID)
+		if err != nil {
+			return nil, err
+		}
+		if seen {
 			duplicated = true
 			return nil, nil
-		}
-		if res.Err() != mongodriver.ErrNoDocuments {
-			return nil, res.Err()
 		}
 		if _, err := s.profiles.InsertOne(ctx, p); err != nil {
 			if mongodriver.IsDuplicateKeyError(err) {
@@ -201,11 +215,13 @@ func (s *MongoStore) ApplyEmailChanged(ctx context.Context, evt events.EmailChan
 
 	_, err = sess.WithTransaction(ctx, func(ctx context.Context) (any, error) {
 		updated, duplicated, notFound = false, false, false
-		if res := s.proc.FindOne(ctx, bson.M{"event_id": evt.Metadata.EventID}); res.Err() == nil {
+		seen, err := s.isProcessed(ctx, evt.Metadata.EventID)
+		if err != nil {
+			return nil, err
+		}
+		if seen {
 			duplicated = true
 			return nil, nil
-		} else if res.Err() != mongodriver.ErrNoDocuments {
-			return nil, res.Err()
 		}
 		markProcessed := func() error {
 			_, ierr := s.proc.InsertOne(ctx, profile.ProcessedEvent{
@@ -357,16 +373,6 @@ func (s *MongoStore) ClaimPending(ctx context.Context, batch int, lease time.Dur
 func (s *MongoStore) MarkPublished(ctx context.Context, outboxID string, now time.Time) error {
 	_, err := s.outbox.UpdateOne(ctx, bson.M{"event_id": outboxID},
 		bson.M{"$set": bson.M{"published_at": now.UTC()}, "$unset": bson.M{"claimed_until": ""}})
-	return err
-}
-
-// MarkFailedByBinary reintenta: attempts++ y last_error, libera el reclamo.
-func (s *MongoStore) MarkFailedByBinary(ctx context.Context, id bson.Binary, msg string, _ time.Time) error {
-	_, err := s.outbox.UpdateOne(ctx, bson.M{"_id": id}, bson.M{
-		"$inc":   bson.M{"attempts": 1},
-		"$set":   bson.M{"last_error": msg},
-		"$unset": bson.M{"claimed_until": ""},
-	})
 	return err
 }
 

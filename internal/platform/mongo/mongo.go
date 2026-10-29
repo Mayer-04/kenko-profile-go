@@ -55,48 +55,55 @@ func Connect(ctx context.Context, cfg config.Config, log *slog.Logger) (*Client,
 
 // EnsureIndexes crea validadores e índices de 8.2. Es idempotente.
 func (c *Client) EnsureIndexes(ctx context.Context) error {
+	create := func(coll string, keys bson.D, opts *options.IndexOptionsBuilder, what string) error {
+		if _, err := c.DB.Collection(coll).Indexes().CreateOne(ctx, mongodriver.IndexModel{
+			Keys: keys, Options: opts,
+		}); err != nil {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		return nil
+	}
 	// processed_events.event_id único (idempotencia D4-A).
-	if _, err := c.DB.Collection(ProcessedCollection).Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "event_id", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("uniq_event_id"),
-	}); err != nil {
-		return fmt.Errorf("index processed_events: %w", err)
+	if err := create(ProcessedCollection,
+		bson.D{{Key: "event_id", Value: 1}},
+		options.Index().SetUnique(true).SetName("uniq_event_id"),
+		"index processed_events"); err != nil {
+		return err
 	}
 	// outbox: pendientes por publicar + reclamo (D5-A) y TTL de limpieza (D6-A).
-	outbox := c.DB.Collection(OutboxCollection)
-	if _, err := outbox.Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "published_at", Value: 1}, {Key: "claimed_until", Value: 1}},
-		Options: options.Index().SetName("pending_claim"),
-	}); err != nil {
-		return fmt.Errorf("index outbox pending: %w", err)
+	if err := create(OutboxCollection,
+		bson.D{{Key: "published_at", Value: 1}, {Key: "claimed_until", Value: 1}},
+		options.Index().SetName("pending_claim"),
+		"index outbox pending"); err != nil {
+		return err
 	}
-	if _, err := outbox.Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "aggregate_id", Value: 1}},
-		Options: options.Index().SetName("by_aggregate"),
-	}); err != nil {
-		return fmt.Errorf("index outbox aggregate: %w", err)
+	if err := create(OutboxCollection,
+		bson.D{{Key: "aggregate_id", Value: 1}},
+		options.Index().SetName("by_aggregate"),
+		"index outbox aggregate"); err != nil {
+		return err
 	}
 	// event_id único: un outbox por evento publicado.
-	if _, err := outbox.Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "event_id", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("uniq_event_id"),
-	}); err != nil {
-		return fmt.Errorf("index outbox event_id: %w", err)
+	if err := create(OutboxCollection,
+		bson.D{{Key: "event_id", Value: 1}},
+		options.Index().SetUnique(true).SetName("uniq_event_id"),
+		"index outbox event_id"); err != nil {
+		return err
 	}
 	// TTL 30 días sobre published_at: solo borra publicados (D6-A).
 	// Los pendientes tienen published_at nulo y el TTL los ignora.
-	if _, err := outbox.Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "published_at", Value: 1}},
-		Options: options.Index().SetName("ttl_published").SetExpireAfterSeconds(30 * 24 * 3600),
-	}); err != nil {
-		return fmt.Errorf("index outbox ttl: %w", err)
+	if err := create(OutboxCollection,
+		bson.D{{Key: "published_at", Value: 1}},
+		options.Index().SetName("ttl_published").SetExpireAfterSeconds(30*24*3600),
+		"index outbox ttl"); err != nil {
+		return err
 	}
 	// profiles: unicidad de documento para detectar duplicados lógicos.
-	if _, err := c.DB.Collection(ProfilesCollection).Indexes().CreateOne(ctx, mongodriver.IndexModel{
-		Keys:    bson.D{{Key: "document_number", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("uniq_document_number"),
-	}); err != nil {
-		return fmt.Errorf("index profiles document: %w", err)
+	if err := create(ProfilesCollection,
+		bson.D{{Key: "document_number", Value: 1}},
+		options.Index().SetUnique(true).SetName("uniq_document_number"),
+		"index profiles document"); err != nil {
+		return err
 	}
 	return nil
 }

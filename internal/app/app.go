@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
 
 	"github.com/Mayer-04/kenko-profile-go/internal/platform/config"
 	platformmongo "github.com/Mayer-04/kenko-profile-go/internal/platform/mongo"
@@ -45,6 +46,19 @@ func Wire(ctx context.Context) (*Deps, error) {
 	}
 	svc := profile.NewService(store.NewMongoStore(mongoClient), log)
 	return &Deps{Config: cfg, Log: log, Mongo: mongoClient, Service: svc, AWS: awsCfg}, nil
+}
+
+// WireOrExit es el cableado compartido de los tres binarios (api, worker,
+// relay). Ante un fallo de init escribe "<name>: init failed: <err>" en
+// stderr y termina con código 1, igual que hacían los main por separado.
+func WireOrExit(ctx context.Context, name string) *Deps {
+	deps, err := Wire(ctx)
+	if err != nil {
+		// Sin logger aún si falla la config; mensaje a stderr.
+		_, _ = os.Stderr.WriteString(name + ": init failed: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+	return deps
 }
 
 // NewSQS construye el cliente SQS de consumo (10.3).
