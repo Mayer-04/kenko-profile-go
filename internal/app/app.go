@@ -7,8 +7,15 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/Mayer-04/kenko-profile-go/internal/documents"
+	doceventbridge "github.com/Mayer-04/kenko-profile-go/internal/documents/eventbridge"
+	dochttpapi "github.com/Mayer-04/kenko-profile-go/internal/documents/httpapi"
+	docpdf "github.com/Mayer-04/kenko-profile-go/internal/documents/pdf"
+	docstore "github.com/Mayer-04/kenko-profile-go/internal/documents/store"
 	"github.com/Mayer-04/kenko-profile-go/internal/platform/config"
+	platformevents "github.com/Mayer-04/kenko-profile-go/internal/platform/events"
 	platformmongo "github.com/Mayer-04/kenko-profile-go/internal/platform/mongo"
+	platformstorage "github.com/Mayer-04/kenko-profile-go/internal/platform/storage"
 	"github.com/Mayer-04/kenko-profile-go/internal/profile"
 	"github.com/Mayer-04/kenko-profile-go/internal/profile/store"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -69,4 +76,26 @@ func NewSQS(cfg aws.Config) *sqs.Client {
 // NewEventBridge construye el cliente de publicación (10.3).
 func NewEventBridge(cfg aws.Config) *eventbridge.Client {
 	return eventbridge.NewFromConfig(cfg)
+}
+
+// NewDocumentsHandler cablea el feature de certificados (solo api).
+// Exige DOCUMENTS_BUCKET_NAME y JWT_SECRET; worker/relay no lo llaman.
+func NewDocumentsHandler(deps *Deps) (*dochttpapi.Handler, error) {
+	if deps.Config.DocumentsBucketName == "" {
+		return nil, fmt.Errorf("DOCUMENTS_BUCKET_NAME es obligatorio para certificates")
+	}
+	if deps.Config.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET es obligatorio para certificates")
+	}
+	mongoStore := docstore.NewMongoStore(deps.Mongo)
+	pdfGen := docpdf.NewGenerator()
+	s3Storage := platformstorage.NewS3Storage(platformstorage.NewClient(deps.AWS), deps.Config.DocumentsBucketName)
+	ebPublisher := platformevents.NewPublisher(NewEventBridge(deps.AWS), deps.Config.EventBusName, "kenko.profile")
+	adapter := doceventbridge.NewAdapter(ebPublisher)
+	usecase := documents.NewGenerateCertificate(
+		mongoStore, mongoStore, pdfGen, s3Storage, adapter,
+		documents.SystemClock{}, documents.UUID7Generator{},
+		deps.Config.DocumentsBucketName, deps.Log,
+	)
+	return dochttpapi.NewHandler(usecase, deps.Config.JWTSecret), nil
 }

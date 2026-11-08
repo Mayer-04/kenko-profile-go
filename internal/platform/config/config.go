@@ -18,10 +18,16 @@ const (
 
 // Config concentra toda la configuración por variables de entorno.
 type Config struct {
-	Port           string
-	AWSRegion      string
-	EventBusName   string
+	Port            string
+	AWSRegion       string
+	EventBusName    string
 	ProfileQueueURL string
+
+	// Documents (certificado de afiliación).
+	// Opcionales en Load para no romper worker/relay ni tests existentes;
+	// el API de certificates los exige a nivel de arranque de ese binario.
+	DocumentsBucketName string
+	JWTSecret           string
 
 	MongoURI    string
 	MongoSource MongoSource
@@ -60,14 +66,16 @@ func Load() (Config, error) {
 		mongoDB = getenv("MONGO_APP_DATABASE", "kenko_eps")
 	}
 	cfg := Config{
-		Port:                getenv("PORT", "8080"),
-		AWSRegion:           getenv("AWS_REGION", "us-east-1"),
-		EventBusName:        getenv("EVENT_BUS_NAME", "kenko-dev-bus"),
-		ProfileQueueURL:     strings.TrimSpace(os.Getenv("PROFILE_QUEUE_URL")),
-		MongoDB:             mongoDB,
-		RelayPollInterval:   5 * time.Second,
-		RelayBatchSize:      10,
-		RelayClaimLease:     60 * time.Second,
+		Port:                  getenv("PORT", "8080"),
+		AWSRegion:             getenv("AWS_REGION", "us-east-1"),
+		EventBusName:          getenv("EVENT_BUS_NAME", "kenko-dev-bus"),
+		ProfileQueueURL:       strings.TrimSpace(os.Getenv("PROFILE_QUEUE_URL")),
+		DocumentsBucketName:   strings.TrimSpace(os.Getenv("DOCUMENTS_BUCKET_NAME")),
+		JWTSecret:             strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		MongoDB:               mongoDB,
+		RelayPollInterval:     5 * time.Second,
+		RelayBatchSize:        10,
+		RelayClaimLease:       60 * time.Second,
 		WorkerWaitTimeSeconds: 20,
 		WorkerMaxMessages:     10,
 	}

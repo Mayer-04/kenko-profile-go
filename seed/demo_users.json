@@ -1,0 +1,26 @@
+[
+  {
+    "userId": "REEMPLAZAR_CON_USERID_DE_AUTH",
+    "document": { "type": "CC", "number": "1000000001" },
+    "person": { "firstName": "Camila", "lastName": "Torres Vega", "birthDate": "1995-03-21", "gender": "female" },
+    "contact": { "email": "jdanielrr98@gmail.com", "phone": "+573000000001" },
+    "address": { "line": "Cra 15 # 93-60 Apto 402", "city": "Bogota" },
+    "createdAt": "2026-03-10T15:00:00Z"
+  },
+  {
+    "userId": "REEMPLAZAR_CON_USERID_DE_AUTH",
+    "document": { "type": "CC", "number": "1000000002" },
+    "person": { "firstName": "Mateo", "lastName": "Salazar Ruiz", "birthDate": "1992-07-08", "gender": "male" },
+    "contact": { "email": "andres.20.chaves@gmail.com", "phone": "+573000000002" },
+    "address": { "line": "Calle 100 # 15-20 Apto 301", "city": "Bogota" },
+    "createdAt": "2026-04-02T15:00:00Z"
+  },
+  {
+    "userId": "REEMPLAZAR_CON_USERID_DE_AUTH",
+    "document": { "type": "CC", "number": "1000000003" },
+    "person": { "firstName": "Valentina", "lastName": "Rojas Pardo", "birthDate": "1998-11-30", "gender": "female" },
+    "contact": { "email": "jupa.roqui7@hotmail.com", "phone": "+573000000003" },
+    "address": { "line": "Av. Boyaca # 45-12", "city": "Bogota" },
+    "createdAt": "2026-05-18T15:00:00Z"
+  }
+]

@@ -18,9 +18,17 @@ import (
 
 // Collections centraliza los nombres de colección.
 const (
-	ProfilesCollection   = "profiles"
-	OutboxCollection     = "outbox_events"
-	ProcessedCollection  = "processed_events"
+	ProfilesCollection  = "profiles"
+	OutboxCollection    = "outbox_events"
+	ProcessedCollection = "processed_events"
+	// CertificatesCollection guarda los certificados de afiliación emitidos.
+	CertificatesCollection = "affiliation_certificates"
+	// CompletedAppointmentsCollection es la base ficticia de citas atendidas.
+	CompletedAppointmentsCollection = "completed_appointments"
+	// AuthorizationsCollection guarda las autorizaciones del paciente.
+	AuthorizationsCollection = "authorizations"
+	// HistoryExportsCollection guarda metadatos de PDFs del historial.
+	HistoryExportsCollection = "medical_history_exports"
 )
 
 // Client envuelve el cliente y la base de datos de la aplicación.
@@ -103,6 +111,34 @@ func (c *Client) EnsureIndexes(ctx context.Context) error {
 		bson.D{{Key: "document_number", Value: 1}},
 		options.Index().SetUnique(true).SetName("uniq_document_number"),
 		"index profiles document"); err != nil {
+		return err
+	}
+	// certificates: búsqueda por titular (idempotente).
+	if err := create(CertificatesCollection,
+		bson.D{{Key: "userId", Value: 1}},
+		options.Index().SetName("by_user"),
+		"index certificates user"); err != nil {
+		return err
+	}
+	// completed_appointments: historial por paciente, más recientes primero.
+	if err := create(CompletedAppointmentsCollection,
+		bson.D{{Key: "userId", Value: 1}, {Key: "date", Value: -1}},
+		options.Index().SetName("by_user_date"),
+		"index completed_appointments user date"); err != nil {
+		return err
+	}
+	// authorizations: autorizaciones por paciente, más recientes primero.
+	if err := create(AuthorizationsCollection,
+		bson.D{{Key: "userId", Value: 1}, {Key: "issuedAt", Value: -1}},
+		options.Index().SetName("by_user_issued"),
+		"index authorizations user issued"); err != nil {
+		return err
+	}
+	// medical_history_exports: exportaciones por paciente.
+	if err := create(HistoryExportsCollection,
+		bson.D{{Key: "userId", Value: 1}},
+		options.Index().SetName("by_user"),
+		"index history_exports user"); err != nil {
 		return err
 	}
 	return nil
