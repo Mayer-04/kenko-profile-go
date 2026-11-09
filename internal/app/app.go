@@ -8,7 +8,11 @@ import (
 	"os"
 
 	"github.com/Mayer-04/kenko-profile-go/internal/documents"
+	"github.com/Mayer-04/kenko-profile-go/internal/documents/authz"
+	"github.com/Mayer-04/kenko-profile-go/internal/documents/authzapi"
 	doceventbridge "github.com/Mayer-04/kenko-profile-go/internal/documents/eventbridge"
+	dochistoryapi "github.com/Mayer-04/kenko-profile-go/internal/documents/historyapi"
+	dochistorypdf "github.com/Mayer-04/kenko-profile-go/internal/documents/historypdf"
 	dochttpapi "github.com/Mayer-04/kenko-profile-go/internal/documents/httpapi"
 	docpdf "github.com/Mayer-04/kenko-profile-go/internal/documents/pdf"
 	docstore "github.com/Mayer-04/kenko-profile-go/internal/documents/store"
@@ -98,4 +102,50 @@ func NewDocumentsHandler(deps *Deps) (*dochttpapi.Handler, error) {
 		deps.Config.DocumentsBucketName, deps.Log,
 	)
 	return dochttpapi.NewHandler(usecase, deps.Config.JWTSecret), nil
+}
+
+// NewHistoryHandler cablea el feature de historial médico (solo api).
+// Exige DOCUMENTS_BUCKET_NAME y JWT_SECRET; worker/relay no lo llaman.
+func NewHistoryHandler(deps *Deps) (*dochistoryapi.Handler, error) {
+	if deps.Config.DocumentsBucketName == "" {
+		return nil, fmt.Errorf("DOCUMENTS_BUCKET_NAME es obligatorio para medical history")
+	}
+	if deps.Config.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET es obligatorio para medical history")
+	}
+	mongoStore := docstore.NewMongoStore(deps.Mongo)
+	pdfGen := dochistorypdf.NewGenerator()
+	s3Storage := platformstorage.NewS3Storage(platformstorage.NewClient(deps.AWS), deps.Config.DocumentsBucketName)
+	ebPublisher := platformevents.NewPublisher(NewEventBridge(deps.AWS), deps.Config.EventBusName, "kenko.profile")
+	adapter := doceventbridge.NewAdapter(ebPublisher)
+	usecase := documents.NewGenerateHistory(
+		mongoStore, mongoStore, mongoStore, pdfGen, s3Storage, adapter,
+		documents.SystemClock{}, documents.UUID7Generator{},
+		deps.Config.DocumentsBucketName, deps.Log,
+	)
+	return dochistoryapi.NewHandler(usecase, deps.Config.JWTSecret), nil
+}
+
+// NewAuthzHandler cablea el feature de autorizaciones (solo api).
+// Exige DOCUMENTS_BUCKET_NAME y JWT_SECRET; worker/relay no lo llaman.
+func NewAuthzHandler(deps *Deps) (*authzapi.Handler, error) {
+	if deps.Config.DocumentsBucketName == "" {
+		return nil, fmt.Errorf("DOCUMENTS_BUCKET_NAME es obligatorio para authorizations")
+	}
+	if deps.Config.JWTSecret == "" {
+		return nil, fmt.Errorf("JWT_SECRET es obligatorio para authorizations")
+	}
+	mongoStore := docstore.NewMongoStore(deps.Mongo)
+	pdfGen := docpdf.NewGenerator()
+	s3Storage := platformstorage.NewS3Storage(platformstorage.NewClient(deps.AWS), deps.Config.DocumentsBucketName)
+	ebPublisher := platformevents.NewPublisher(NewEventBridge(deps.AWS), deps.Config.EventBusName, "kenko.profile")
+	adapter := doceventbridge.NewAdapter(ebPublisher)
+	lister := authz.NewListAuthorizations(mongoStore)
+	getter := authz.NewGetAuthorizationPDF(mongoStore, mongoStore, pdfGen)
+	notifier := authz.NewNotifyAuthorization(
+		mongoStore, mongoStore, pdfGen, s3Storage, mongoStore, adapter,
+		documents.SystemClock{}, documents.UUID7Generator{},
+		deps.Config.DocumentsBucketName, deps.Log,
+	)
+	return authzapi.NewHandler(lister, getter, notifier, deps.Config.JWTSecret), nil
 }

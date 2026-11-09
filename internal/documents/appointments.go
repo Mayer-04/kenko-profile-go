@@ -6,14 +6,36 @@ import (
 	"time"
 )
 
-// Especialidades válidas para CompletedAppointment.Type (mayúsculas,
-// sin tildes, como en los eventos de Appointments).
-var AppointmentTypes = []string{
-	"MEDICINA_GENERAL",
-	"ODONTOLOGIA",
-	"OPTOMETRIA",
-	"DERMATOLOGIA",
-	"CARDIOLOGIA",
+// AppointmentType es el tipo de cita (mayúsculas, sin tildes,
+// como en los eventos de Appointments).
+type AppointmentType string
+
+// Tipos de cita de la base ficticia.
+const (
+	AppointmentTypeMedicinaGeneral AppointmentType = "MEDICINA_GENERAL"
+	AppointmentTypeOdontologia     AppointmentType = "ODONTOLOGIA"
+	AppointmentTypePsicologia      AppointmentType = "PSICOLOGIA"
+)
+
+// AppointmentTypes son los tres tipos válidos.
+var AppointmentTypes = []AppointmentType{
+	AppointmentTypeMedicinaGeneral,
+	AppointmentTypeOdontologia,
+	AppointmentTypePsicologia,
+}
+
+// SpanishLabel devuelve la etiqueta en español para mostrar.
+func (t AppointmentType) SpanishLabel() string {
+	switch t {
+	case AppointmentTypeMedicinaGeneral:
+		return "Medicina general"
+	case AppointmentTypeOdontologia:
+		return "Odontología"
+	case AppointmentTypePsicologia:
+		return "Psicología"
+	default:
+		return ""
+	}
 }
 
 // Estado único de la base ficticia: todas las citas están atendidas.
@@ -36,17 +58,17 @@ type MedicalCenter struct {
 // médico en PDF). El día se guarda como texto "YYYY-MM-DD" para evitar
 // desfases de zona horaria; CompletedAt es Date en UTC.
 type CompletedAppointment struct {
-	ID            string        `bson:"_id"`
-	UserID        string        `bson:"userId"`
-	Type          string        `bson:"type"`
-	Date          string        `bson:"date"`
-	StartTime     string        `bson:"startTime"`
-	EndTime       string        `bson:"endTime"`
-	Physician     Physician     `bson:"physician"`
-	MedicalCenter MedicalCenter `bson:"medicalCenter"`
-	Status        string        `bson:"status"`
-	Notes         string        `bson:"notes"`
-	CompletedAt   time.Time     `bson:"completedAt"`
+	ID            string          `bson:"_id"`
+	UserID        string          `bson:"userId"`
+	Type          AppointmentType `bson:"type"`
+	Date          string          `bson:"date"`
+	StartTime     string          `bson:"startTime"`
+	EndTime       string          `bson:"endTime"`
+	Physician     Physician       `bson:"physician"`
+	MedicalCenter MedicalCenter   `bson:"medicalCenter"`
+	Status        string          `bson:"status"`
+	Notes         string          `bson:"notes"`
+	CompletedAt   time.Time       `bson:"completedAt"`
 }
 
 // Validate verifica campos obligatorios y formatos de la cita.
@@ -57,7 +79,7 @@ func (a CompletedAppointment) Validate() error {
 	if strings.TrimSpace(a.UserID) == "" {
 		return errors.New("user id obligatorio")
 	}
-	if !validValue(a.Type, AppointmentTypes) {
+	if !validAppointmentType(a.Type) {
 		return errors.New("tipo de cita inválido")
 	}
 	if _, err := time.Parse("2006-01-02", a.Date); err != nil {
@@ -85,6 +107,16 @@ func (a CompletedAppointment) Validate() error {
 		return errors.New("completedAt obligatorio")
 	}
 	return nil
+}
+
+// validAppointmentType revisa pertenencia a los tres tipos válidos.
+func validAppointmentType(v AppointmentType) bool {
+	for _, a := range AppointmentTypes {
+		if v == a {
+			return true
+		}
+	}
+	return false
 }
 
 // validValue revisa pertenencia a una lista cerrada.

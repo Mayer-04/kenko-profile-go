@@ -12,4 +12,5 @@ RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api && \
 FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
 COPY --from=build /out/api /out/worker /out/relay /app/
+COPY seed/demo_users.json /app/seed/demo_users.json
 USER nonroot:nonroot

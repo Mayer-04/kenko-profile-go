@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Mayer-04/kenko-profile-go/internal/documents"
 	"github.com/gofrs/uuid/v5"
 )
 
@@ -44,8 +45,8 @@ func TestGenerateAppointmentsDeterministic(t *testing.T) {
 	first := GenerateAppointments(u, now)
 	second := GenerateAppointments(u, now)
 
-	if len(first) < 4 || len(first) > 6 {
-		t.Fatalf("citas fuera de rango 4-6: %d", len(first))
+	if len(first) != len(documents.AppointmentTypes)*AppointmentsPerType {
+		t.Fatalf("citas = %d, quiero %d", len(first), len(documents.AppointmentTypes)*AppointmentsPerType)
 	}
 	ids := map[string]bool{}
 	for i, a := range first {
@@ -65,6 +66,124 @@ func TestGenerateAppointmentsDeterministic(t *testing.T) {
 		}
 		if a.UserID != u.UserID || a.Status != "COMPLETED" {
 			t.Fatalf("cita %d con userId o status mal", i)
+		}
+	}
+}
+
+func TestGenerateAppointmentsCoversAllTypes(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	for _, u := range testUsers() {
+		got := GenerateAppointments(u, now)
+		counts := map[documents.AppointmentType]int{}
+		for _, a := range got {
+			counts[a.Type]++
+		}
+		for _, typ := range documents.AppointmentTypes {
+			if counts[typ] != AppointmentsPerType {
+				t.Fatalf("usuario %s tipo %s = %d, quiero %d", u.UserID, typ, counts[typ], AppointmentsPerType)
+			}
+		}
+	}
+}
+
+func TestGenerateAppointmentsNoFutureNoWeekend(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC) // domingo
+	loc, _ := time.LoadLocation("America/Bogota")
+	for _, u := range testUsers() {
+		seen := map[string]bool{}
+		for _, a := range GenerateAppointments(u, now) {
+			if a.CompletedAt.After(now) {
+				t.Fatalf("cita futura: %s %s", a.Date, a.StartTime)
+			}
+			day, _ := time.ParseInLocation("2006-01-02", a.Date, loc)
+			if wd := day.Weekday(); wd == time.Saturday || wd == time.Sunday {
+				t.Fatalf("cita en fin de semana: %s", a.Date)
+			}
+			key := a.Date + "|" + a.StartTime
+			if seen[key] {
+				t.Fatalf("día y hora repetidos: %s", key)
+			}
+			seen[key] = true
+		}
+	}
+}
+
+func TestGenerateAppointmentsTimesAndDurations(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	want := map[documents.AppointmentType]int{
+		documents.AppointmentTypeMedicinaGeneral: 30,
+		documents.AppointmentTypeOdontologia:     45,
+		documents.AppointmentTypePsicologia:      60,
+	}
+	for _, a := range GenerateAppointments(testUsers()[0], now) {
+		start, err := time.Parse("15:04", a.StartTime)
+		if err != nil {
+			t.Fatalf("start inválido: %q", a.StartTime)
+		}
+		end, err := time.Parse("15:04", a.EndTime)
+		if err != nil {
+			t.Fatalf("end inválido: %q", a.EndTime)
+		}
+		if got := int(end.Sub(start).Minutes()); got != want[a.Type] {
+			t.Fatalf("tipo %s duración = %d, quiero %d", a.Type, got, want[a.Type])
+		}
+		if a.StartTime < "08:00" || a.EndTime > "17:00" {
+			t.Fatalf("fuera de horario 08:00-17:00: %s-%s", a.StartTime, a.EndTime)
+		}
+		if a.Physician.PhysicianID == "" || a.MedicalCenter.MedicalCenterID == "" {
+			t.Fatal("médico o sede sin id")
+		}
+		if strings.TrimSpace(a.Notes) == "" {
+			t.Fatal("notes vacías")
+		}
+	}
+}
+
+func TestGenerateAppointmentsCompletedAtMatchesEnd(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	loc, err := time.LoadLocation("America/Bogota")
+	if err != nil {
+		t.Skip("sin zona America/Bogota")
+	}
+	for _, a := range GenerateAppointments(testUsers()[0], now) {
+		want, err := time.ParseInLocation("2006-01-02 15:04", a.Date+" "+a.EndTime, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !a.CompletedAt.Equal(want.UTC()) {
+			t.Fatalf("completedAt = %s, quiero fin %s UTC", a.CompletedAt, want.UTC())
+		}
+	}
+}
+
+func TestGenerateAppointmentsStableIDs(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	users := testUsers()
+	byPhysician := map[string]string{}
+	centers := map[string]bool{}
+	for _, u := range users {
+		for _, a := range GenerateAppointments(u, now) {
+			if prev, ok := byPhysician[a.Physician.Name]; ok && prev != a.Physician.PhysicianID {
+				t.Fatalf("médico %q con ids distintos", a.Physician.Name)
+			}
+			byPhysician[a.Physician.Name] = a.Physician.PhysicianID
+			centers[a.MedicalCenter.MedicalCenterID] = true
+		}
+	}
+	if len(centers) != 2 {
+		t.Fatalf("sedes distintas = %d, quiero 2", len(centers))
+	}
+}
+
+func TestAppointmentTypeSpanishLabel(t *testing.T) {
+	cases := map[documents.AppointmentType]string{
+		documents.AppointmentTypeMedicinaGeneral: "Medicina general",
+		documents.AppointmentTypeOdontologia:     "Odontología",
+		documents.AppointmentTypePsicologia:      "Psicología",
+	}
+	for typ, want := range cases {
+		if got := typ.SpanishLabel(); got != want {
+			t.Fatalf("etiqueta %s = %q, quiero %q", typ, got, want)
 		}
 	}
 }

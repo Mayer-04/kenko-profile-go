@@ -22,15 +22,16 @@ func main() {
 	dryRun := flag.Bool("dry-run", false, "muestra qué haría sin escribir")
 	reset := flag.Bool("reset", false, "borra solo completed_appointments de los usuarios y termina")
 	overwrite := flag.Bool("overwrite-profiles", false, "actualiza perfiles existentes")
+	extra := flag.Int("extra-profiles", 7, "perfiles ficticios de relleno además del archivo")
 	flag.Parse()
 
-	if err := run(*file, *dryRun, *reset, *overwrite); err != nil {
+	if err := run(*file, *dryRun, *reset, *overwrite, *extra); err != nil {
 		_, _ = os.Stderr.WriteString("seed: " + err.Error() + "\n")
 		os.Exit(1)
 	}
 }
 
-func run(file string, dryRun, reset, overwrite bool) error {
+func run(file string, dryRun, reset, overwrite bool, extra int) error {
 	config.LoadEnvFile()
 	logger := config.NewLogger()
 
@@ -72,19 +73,22 @@ func run(file string, dryRun, reset, overwrite bool) error {
 		DryRun:            dryRun,
 		Reset:             reset,
 		OverwriteProfiles: overwrite,
+		ExtraProfiles:     extra,
 	}, time.Now())
 	if err != nil {
 		return err
 	}
 	if reset {
-		logger.Info("seed.reset_completado", slog.Int("citas_borradas", summary.AppointmentsGone), slog.Bool("dry_run", dryRun))
+		logger.Info("seed.reset_completado", slog.Int("autorizaciones_borradas", summary.AuthorizationsGone), slog.Int("citas_borradas", summary.AppointmentsGone), slog.Bool("dry_run", dryRun))
 		return nil
 	}
 	logger.Info("seed.completado",
 		slog.Int("perfiles_insertados", summary.ProfilesInserted),
 		slog.Int("perfiles_actualizados", summary.ProfilesUpdated),
 		slog.Int("perfiles_omitidos", summary.ProfilesSkipped),
+		slog.Int("perfiles_relleno", summary.ExtraProfiles),
 		slog.Int("citas", summary.AppointmentsSet),
+		slog.Int("autorizaciones", summary.AuthorizationsSet),
 		slog.Bool("dry_run", dryRun),
 	)
 	return nil

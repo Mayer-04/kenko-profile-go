@@ -1,7 +1,11 @@
-# Seed de demostración (perfiles + citas ficticias)
+# Seed de demostración (perfiles + citas + autorizaciones ficticias)
 
-Crea los 3 perfiles de la demo y 4–6 citas atendidas por usuario en
-`completed_appointments`. No toca AWS, no publica eventos ni envía correos.
+Crea los 3 perfiles de la demo y, por defecto, 7 perfiles ficticios de relleno
+(10 en total), con 6 citas atendidas por usuario en `completed_appointments`
+(2 por tipo; 60 en total) y UNA autorización por usuario en `authorizations`
+(ciclando BLOOD_TEST/XRAY/DENTAL_CLEANING). Los correos de relleno usan
+`@ejemplo.invalid` (dominio inexistente; jamás se les envía correo). No toca
+AWS, no publica eventos ni envía correos.
 
 ## 1. Obtener los `userId` de Authentication
 
@@ -22,21 +26,29 @@ correos no son exactamente los 3 permitidos o si los ids no son UUID válidos.
 
 ```bash
 go run ./cmd/seed --dry-run            # muestra qué haría, sin escribir
-go run ./cmd/seed                      # inserta perfiles + citas
+go run ./cmd/seed                      # inserta perfiles + citas + autorizaciones (3 + 7 relleno)
+go run ./cmd/seed --extra-profiles 0   # solo los 3 del archivo
 go run ./cmd/seed --overwrite-profiles # además actualiza perfiles existentes
-go run ./cmd/seed --reset              # borra SOLO las citas de estos usuarios
+go run ./cmd/seed --reset              # borra SOLO citas y autorizaciones de estos usuarios
 ```
 
 Variables necesarias: `MONGODB_URI` (Docker local) y base (`MONGO_APP_DB`
 o `MONGO_APP_DATABASE`, por defecto `kenko_eps`). Se niega a correr contra
-Atlas/remoto. Re-ejecutar es seguro: los ids de cita son determinísticos y
-las escrituras son upsert.
+Atlas/remoto y si `ENVIRONMENT` es producción. Al arrancar el api, `SEED_DEMO_DATA=true`
+siembra lo mismo (`DEMO_USERS_FILE`, `DEMO_EXTRA_PROFILES`, 7 por defecto).
+Re-ejecutar es seguro: los ids son determinísticos (`UUIDv5`) y las escrituras
+son upsert/`$setOnInsert` (no sobrescribe autorizaciones existentes).
 
 ## 3. Comprobar con `mongosh`
 
 ```bash
 mongosh "mongodb://127.0.0.1:27017/kenko_eps"
-db.profiles.countDocuments()                        # 3
-db.completed_appointments.countDocuments()          # 12-18
+db.profiles.countDocuments()                        # 10 (3 demo + 7 relleno)
+db.completed_appointments.countDocuments()          # 60
+db.authorizations.countDocuments()                  # 10
+db.completed_appointments.aggregate([
+  { $group: { _id: { userId: "$userId", type: "$type" }, total: { $sum: 1 } } },
+  { $sort: { "_id.userId": 1, "_id.type": 1 } }
+])
 db.completed_appointments.findOne({userId: "<userId>"})
 ```

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Mayer-04/kenko-profile-go/internal/documents"
 	platformmongo "github.com/Mayer-04/kenko-profile-go/internal/platform/mongo"
 	"github.com/Mayer-04/kenko-profile-go/internal/profile"
 	"github.com/gofrs/uuid/v5"
@@ -168,30 +169,45 @@ type Options struct {
 	DryRun            bool
 	Reset             bool
 	OverwriteProfiles bool
+	// ExtraProfiles genera N perfiles ficticios de relleno además del archivo.
+	ExtraProfiles int
 }
 
 // Summary cuenta lo que el seed hizo (o haría con DryRun).
 type Summary struct {
-	ProfilesInserted int
-	ProfilesUpdated  int
-	ProfilesSkipped  int
-	AppointmentsSet  int
-	AppointmentsGone int // borradas con Reset
+	ProfilesInserted   int
+	ProfilesUpdated    int
+	ProfilesSkipped    int
+	AppointmentsSet    int
+	AppointmentsGone   int // borradas con Reset
+	AuthorizationsSet  int
+	AuthorizationsGone int // borradas con Reset
+	ExtraProfiles      int // relleno generado además del archivo
 }
 
-// Run ejecuta el seed: valida, inserta perfiles y citas. Con DryRun solo
-// cuenta sin escribir. Con Reset solo borra citas y termina.
+// Run ejecuta el seed: valida, inserta perfiles, citas y autorizaciones.
+// Con DryRun solo cuenta sin escribir. Con Reset borra primero las
+// autorizaciones y luego las citas de los usuarios, y termina.
 func Run(ctx context.Context, db *mongodriver.Database, users []DemoUser, opts Options, now time.Time) (Summary, error) {
 	var s Summary
 	profiles := db.Collection(platformmongo.ProfilesCollection)
 	appointments := db.Collection(platformmongo.CompletedAppointmentsCollection)
-	userIDs := make([]string, 0, len(users))
-	for _, u := range users {
+	authorizations := db.Collection(platformmongo.AuthorizationsCollection)
+	extras := MakeExtraUsers(opts.ExtraProfiles, now)
+	s.ExtraProfiles = len(extras)
+	allUsers := append(append([]DemoUser{}, users...), extras...)
+	userIDs := make([]string, 0, len(allUsers))
+	for _, u := range allUsers {
 		userIDs = append(userIDs, u.UserID)
 	}
 
 	if opts.Reset {
 		if opts.DryRun {
+			nAuth, err := authorizations.CountDocuments(ctx, bson.M{"userId": bson.M{"$in": userIDs}})
+			if err != nil {
+				return s, fmt.Errorf("contar autorizaciones: %w", err)
+			}
+			s.AuthorizationsGone = int(nAuth)
 			n, err := appointments.CountDocuments(ctx, bson.M{"userId": bson.M{"$in": userIDs}})
 			if err != nil {
 				return s, fmt.Errorf("contar citas: %w", err)
@@ -199,6 +215,12 @@ func Run(ctx context.Context, db *mongodriver.Database, users []DemoUser, opts O
 			s.AppointmentsGone = int(n)
 			return s, nil
 		}
+		// Primero autorizaciones para no dejar huérfanas.
+		resAuth, err := authorizations.DeleteMany(ctx, bson.M{"userId": bson.M{"$in": userIDs}})
+		if err != nil {
+			return s, fmt.Errorf("borrar autorizaciones: %w", err)
+		}
+		s.AuthorizationsGone = int(resAuth.DeletedCount)
 		res, err := appointments.DeleteMany(ctx, bson.M{"userId": bson.M{"$in": userIDs}})
 		if err != nil {
 			return s, fmt.Errorf("borrar citas: %w", err)
@@ -207,7 +229,8 @@ func Run(ctx context.Context, db *mongodriver.Database, users []DemoUser, opts O
 		return s, nil
 	}
 
-	for _, u := range users {
+	byUser := map[string][]documents.CompletedAppointment{}
+	for _, u := range allUsers {
 		action, err := seedProfile(ctx, profiles, u, opts)
 		if err != nil {
 			return s, err
@@ -220,7 +243,9 @@ func Run(ctx context.Context, db *mongodriver.Database, users []DemoUser, opts O
 		default:
 			s.ProfilesSkipped++
 		}
-		for _, a := range GenerateAppointments(u, now.UTC()) {
+		generated := GenerateAppointments(u, now.UTC())
+		byUser[u.UserID] = append([]documents.CompletedAppointment{}, generated...)
+		for _, a := range generated {
 			if err := a.Validate(); err != nil {
 				return s, fmt.Errorf("cita generada inválida: %w", err)
 			}
@@ -238,6 +263,15 @@ func Run(ctx context.Context, db *mongodriver.Database, users []DemoUser, opts O
 			s.AppointmentsSet++
 		}
 	}
+	auths, err := BuildAuthorizations(allUsers, byUser, now.UTC())
+	if err != nil {
+		return s, err
+	}
+	n, err := SeedAuthorizations(ctx, db, auths, opts.DryRun)
+	if err != nil {
+		return s, err
+	}
+	s.AuthorizationsSet = n
 	return s, nil
 }
 

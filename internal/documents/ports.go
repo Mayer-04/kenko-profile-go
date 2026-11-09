@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// ProfileSnapshot son los datos mínimos del titular para el certificado.
+// ProfileSnapshot son los datos mínimos del titular para los documentos.
 // Viene del adaptador que lee la colección profiles (sin importar ese paquete).
 type ProfileSnapshot struct {
 	UserID               string
@@ -13,6 +13,7 @@ type ProfileSnapshot struct {
 	LastName             string
 	DocumentType         string
 	DocumentNumber       string
+	Email                string
 	AffiliationStartDate time.Time
 }
 

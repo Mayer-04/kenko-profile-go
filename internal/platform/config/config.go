@@ -29,6 +29,11 @@ type Config struct {
 	DocumentsBucketName string
 	JWTSecret           string
 
+	// Demo: siembra al arrancar el api (solo desarrollo local).
+	SeedDemoData      bool
+	DemoUsersFile     string
+	DemoExtraProfiles int
+
 	MongoURI    string
 	MongoSource MongoSource
 	MongoDB     string
@@ -48,6 +53,19 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// demoExtraProfiles lee DEMO_EXTRA_PROFILES (7 por defecto, 0 o más).
+func demoExtraProfiles() int {
+	v := strings.TrimSpace(os.Getenv("DEMO_EXTRA_PROFILES"))
+	if v == "" {
+		return 7
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 7
+	}
+	return n
 }
 
 // wellFormedMongoURI implementa el criterio de «disponible» de 8.3:
@@ -72,6 +90,9 @@ func Load() (Config, error) {
 		ProfileQueueURL:       strings.TrimSpace(os.Getenv("PROFILE_QUEUE_URL")),
 		DocumentsBucketName:   strings.TrimSpace(os.Getenv("DOCUMENTS_BUCKET_NAME")),
 		JWTSecret:             strings.TrimSpace(os.Getenv("JWT_SECRET")),
+		SeedDemoData:          strings.EqualFold(strings.TrimSpace(os.Getenv("SEED_DEMO_DATA")), "true"),
+		DemoUsersFile:         getenv("DEMO_USERS_FILE", "seed/demo_users.json"),
+		DemoExtraProfiles:     demoExtraProfiles(),
 		MongoDB:               mongoDB,
 		RelayPollInterval:     5 * time.Second,
 		RelayBatchSize:        10,

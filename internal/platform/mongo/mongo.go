@@ -127,11 +127,17 @@ func (c *Client) EnsureIndexes(ctx context.Context) error {
 		"index completed_appointments user date"); err != nil {
 		return err
 	}
-	// authorizations: autorizaciones por paciente, más recientes primero.
+	// authorizations: listado del usuario y unicidad por cita+tipo.
 	if err := create(AuthorizationsCollection,
-		bson.D{{Key: "userId", Value: 1}, {Key: "issuedAt", Value: -1}},
-		options.Index().SetName("by_user_issued"),
-		"index authorizations user issued"); err != nil {
+		bson.D{{Key: "userId", Value: 1}, {Key: "createdAt", Value: -1}},
+		options.Index().SetName("by_user_created"),
+		"index authorizations user created"); err != nil {
+		return err
+	}
+	if err := create(AuthorizationsCollection,
+		bson.D{{Key: "appointmentId", Value: 1}, {Key: "type", Value: 1}},
+		options.Index().SetUnique(true).SetName("uniq_appointment_type"),
+		"index authorizations appointment type"); err != nil {
 		return err
 	}
 	// medical_history_exports: exportaciones por paciente.
