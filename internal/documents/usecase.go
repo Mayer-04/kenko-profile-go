@@ -48,6 +48,16 @@ func (u *GenerateCertificate) Execute(ctx context.Context, cmd GenerateCommand) 
 	if err != nil {
 		return GenerateResult{}, fmt.Errorf("%w: %v", ErrProfileNotFound, err)
 	}
+	// Auth actual no trae firstName/email en el JWT: se toman del snapshot.
+	// Se mantiene compat con legacy (si cmd trae valores, tienen prioridad).
+	email := strings.TrimSpace(cmd.Email)
+	if email == "" {
+		email = strings.TrimSpace(snapshot.Email)
+	}
+	firstName := strings.TrimSpace(cmd.FirstName)
+	if firstName == "" {
+		firstName = strings.TrimSpace(snapshot.FirstName)
+	}
 
 	now := u.clock.Now().UTC()
 	certificateID := strings.TrimSpace(u.ids.NewID())
@@ -98,8 +108,8 @@ func (u *GenerateCertificate) Execute(ctx context.Context, cmd GenerateCommand) 
 		Data: EventData{
 			CertificateID: certificateID,
 			UserID:        snapshot.UserID,
-			Email:         strings.TrimSpace(cmd.Email),
-			FirstName:     strings.TrimSpace(cmd.FirstName),
+			Email:         email,
+			FirstName:     firstName,
 			IssuedAt:      now.Format(time.RFC3339),
 			File: EventFile{
 				Bucket:      u.bucket,
@@ -118,13 +128,13 @@ func (u *GenerateCertificate) Execute(ctx context.Context, cmd GenerateCommand) 
 	if err := u.publisher.PublishCertificateGenerated(ctx, evt); err != nil {
 		u.log.Error("certificate.publish_failed",
 			"certificateId", certificateID,
-			"email", maskEmail(cmd.Email))
+			"email", maskEmail(email))
 		return GenerateResult{}, fmt.Errorf("%w: %v", ErrEventPublish, err)
 	}
 
 	u.log.Info("certificate.generated",
 		"certificateId", certificateID,
-		"email", maskEmail(cmd.Email),
+		"email", maskEmail(email),
 		"correlationId", correlationID)
 
 	return GenerateResult{

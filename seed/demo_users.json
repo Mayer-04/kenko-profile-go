@@ -1,6 +1,6 @@
 [
   {
-    "userId": "REEMPLAZAR_CON_USERID_DE_AUTH",
+    "userId": "019a1c2d-c469-7111-8ead-95eca5b4dfe5",
     "document": { "type": "CC", "number": "1000000001" },
     "person": { "firstName": "Camila", "lastName": "Torres Vega", "birthDate": "1995-03-21", "gender": "female" },
     "contact": { "email": "jdanielrr98@gmail.com", "phone": "+573000000001" },
@@ -8,7 +8,7 @@
     "createdAt": "2026-03-10T15:00:00Z"
   },
   {
-    "userId": "REEMPLAZAR_CON_USERID_DE_AUTH",
+    "userId": "019a1c2d-c469-75e9-b884-8a247237fe44",
     "document": { "type": "CC", "number": "1000000002" },
     "person": { "firstName": "Mateo", "lastName": "Salazar Ruiz", "birthDate": "1992-07-08", "gender": "male" },
     "contact": { "email": "andres.20.chaves@gmail.com", "phone": "+573000000002" },
@@ -16,7 +16,7 @@
     "createdAt": "2026-04-02T15:00:00Z"
   },
   {
-    "userId": "REEMPLAZAR_CON_USERID_DE_AUTH",
+    "userId": "019a1c2d-c469-776e-9c8f-c720c4ba75c0",
     "document": { "type": "CC", "number": "1000000003" },
     "person": { "firstName": "Valentina", "lastName": "Rojas Pardo", "birthDate": "1998-11-30", "gender": "female" },
     "contact": { "email": "jupa.roqui7@hotmail.com", "phone": "+573000000003" },

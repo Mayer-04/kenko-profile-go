@@ -20,14 +20,27 @@ var (
 )
 
 // Claims mínimos que emite Authentication.
+// Formato legacy: userId/firstName/email. Formato Auth actual:
+// sub (=userId), sid, iss, aud, jti, iat, exp (sin firstName/email;
+// esos se toman del snapshot del perfil en Mongo).
 type Claims struct {
 	UserID    string
 	FirstName string
 	Email     string
 }
 
-// ValidateToken valida un JWT HS256 con exp obligatorio y claims
-// userId, firstName y email. No registra nada (sin PII en logs).
+// Issuer y audiencia que emite el servicio de authorization.
+const (
+	ExpectedIssuer   = "kenko.auth"
+	ExpectedAudience = "kenko-api"
+)
+
+// ValidateToken valida un JWT HS256 con exp obligatorio.
+// Acepta dos formatos:
+//   - legacy: userId, firstName, email
+//   - Auth actual: sub (=userId), iss=kenko.auth, aud=kenko-api
+// En formato Auth, firstName/email vienen vacíos y el caller debe
+// tomarlos del snapshot del perfil. No registra nada (sin PII en logs).
 func ValidateToken(tokenString, secret string) (Claims, error) {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
@@ -68,101 +81,98 @@ func ValidateToken(tokenString, secret string) (Claims, error) {
 	if err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-	var payload struct {
-		UserID    string `json:"userId"`
-		FirstName string `json:"firstName"`
-		Email     string `json:"email"`
-		Exp       *int64 `json:"exp"`
-	}
+	var raw map[string]any
 	dec := json.NewDecoder(strings.NewReader(string(payloadJSON)))
 	dec.UseNumber()
-	var raw map[string]any
 	if err := dec.Decode(&raw); err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-	rawBytes, _ := json.Marshal(raw)
-	if err := json.Unmarshal(rawBytes, &payload); err != nil {
-		// exp puede venir como float; reintento manual.
-		if !parseClaimsLoose(raw, &payload) {
-			return Claims{}, ErrInvalidToken
-		}
-	}
-	// exp puede venir como float64 si el primer parse lo truncó.
-	if payload.Exp == nil {
-		if !extractExp(raw, &payload) {
-			return Claims{}, ErrInvalidToken
-		}
-	}
-	if payload.Exp == nil {
+	exp, ok := rawExp(raw)
+	if !ok {
 		return Claims{}, ErrInvalidToken
 	}
-	if time.Now().Unix() >= *payload.Exp {
+	if time.Now().Unix() >= exp {
 		return Claims{}, ErrExpiredToken
 	}
-	userID := strings.TrimSpace(payload.UserID)
-	firstName := strings.TrimSpace(payload.FirstName)
-	email := strings.TrimSpace(payload.Email)
-	if userID == "" || firstName == "" || email == "" {
+	userID := strings.TrimSpace(rawString(raw, "userId"))
+	if userID == "" {
+		userID = strings.TrimSpace(rawString(raw, "sub"))
+	}
+	firstName := strings.TrimSpace(rawString(raw, "firstName"))
+	email := strings.TrimSpace(rawString(raw, "email"))
+	if iss := strings.TrimSpace(rawString(raw, "iss")); iss != "" && iss != ExpectedIssuer {
+		return Claims{}, ErrInvalidToken
+	}
+	if audRaw, present := raw["aud"]; present && audRaw != nil {
+		if !validAudience(audRaw) {
+			return Claims{}, ErrInvalidToken
+		}
+	}
+	if userID == "" {
 		return Claims{}, ErrInvalidToken
 	}
 	if _, err := uuid.FromString(userID); err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-	if !strings.Contains(email, "@") {
+	if email != "" && !strings.Contains(email, "@") {
 		return Claims{}, ErrInvalidToken
 	}
 	return Claims{UserID: userID, FirstName: firstName, Email: email}, nil
 }
 
-func parseClaimsLoose(raw map[string]any, out *struct {
-	UserID    string `json:"userId"`
-	FirstName string `json:"firstName"`
-	Email     string `json:"email"`
-	Exp       *int64 `json:"exp"`
-},
-) bool {
-	if v, ok := raw["userId"].(string); ok {
-		out.UserID = v
+func rawString(raw map[string]any, key string) string {
+	v, ok := raw[key]
+	if !ok || v == nil {
+		return ""
 	}
-	if v, ok := raw["firstName"].(string); ok {
-		out.FirstName = v
-	}
-	if v, ok := raw["email"].(string); ok {
-		out.Email = v
-	}
-	return extractExp(raw, out)
+	s, _ := v.(string)
+	return s
 }
 
-func extractExp(raw map[string]any, out *struct {
-	UserID    string `json:"userId"`
-	FirstName string `json:"firstName"`
-	Email     string `json:"email"`
-	Exp       *int64 `json:"exp"`
-},
-) bool {
-	v, ok := raw["exp"]
-	if !ok || v == nil {
+func validAudience(v any) bool {
+	switch n := v.(type) {
+	case string:
+		return strings.TrimSpace(n) == ExpectedAudience
+	case []any:
+		for _, e := range n {
+			if s, _ := e.(string); strings.TrimSpace(s) == ExpectedAudience {
+				return true
+			}
+		}
+		return false
+	case []string:
+		for _, s := range n {
+			if strings.TrimSpace(s) == ExpectedAudience {
+				return true
+			}
+		}
+		return false
+	default:
 		return false
 	}
-	var exp int64
+}
+
+func rawExp(raw map[string]any) (int64, bool) {
+	v, ok := raw["exp"]
+	if !ok || v == nil {
+		return 0, false
+	}
 	switch n := v.(type) {
 	case json.Number:
 		i, err := n.Int64()
 		if err != nil {
-			return false
+			return 0, false
 		}
-		exp = i
+		return i, true
 	case float64:
-		exp = int64(n)
+		return int64(n), true
 	case int64:
-		exp = n
+		return n, true
 	case int:
-		exp = int64(n)
+		return int64(n), true
 	default:
-		return false
+		return 0, false
 	}
-	out.Exp = &exp
-	return true
 }
 
 // BearerToken extrae el token de "Authorization: Bearer <token>".

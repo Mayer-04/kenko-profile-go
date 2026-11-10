@@ -78,6 +78,7 @@ func main() {
 // registra un aviso y deja que el servidor arranque igual.
 func seedDemoData(ctx context.Context, deps *app.Deps) {
 	if !deps.Config.SeedDemoData {
+		deps.Log.Info("seed.omitido_flag", "hint", "SEED_DEMO_DATA!=true en .env; el api arranca sin sembrar")
 		return
 	}
 	if env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT"))); env == "production" || env == "prod" {

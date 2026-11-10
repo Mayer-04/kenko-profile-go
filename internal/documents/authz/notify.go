@@ -68,6 +68,15 @@ func (u *NotifyAuthorization) Execute(ctx context.Context, cmd NotifyCommand) (N
 	if err != nil {
 		return NotifyResult{}, fmt.Errorf("%w: %v", documents.ErrProfileNotFound, err)
 	}
+	// Auth actual no trae firstName/email en el JWT: se toman del snapshot.
+	email := strings.TrimSpace(cmd.Email)
+	if email == "" {
+		email = strings.TrimSpace(snapshot.Email)
+	}
+	firstName := strings.TrimSpace(cmd.FirstName)
+	if firstName == "" {
+		firstName = strings.TrimSpace(snapshot.FirstName)
+	}
 	data, err := u.pdf.GenerateAuthorization(snapshot, item)
 	if err != nil {
 		return NotifyResult{}, fmt.Errorf("%w: genera pdf: %v", documents.ErrStorage, err)
@@ -102,8 +111,8 @@ func (u *NotifyAuthorization) Execute(ctx context.Context, cmd NotifyCommand) (N
 			CorrelationID: correlationID,
 		},
 		Data: NotifyData{
-			Email:             strings.TrimSpace(cmd.Email),
-			FirstName:         strings.TrimSpace(cmd.FirstName),
+			Email:             email,
+			FirstName:         firstName,
 			AuthorizationType: item.Authorization.Type.Label(),
 			Status:            item.Authorization.Status.Label(),
 			ChangedAt:         now.Format(time.RFC3339),
@@ -123,13 +132,13 @@ func (u *NotifyAuthorization) Execute(ctx context.Context, cmd NotifyCommand) (N
 	if err := u.publisher.PublishAuthorizationStatusChanged(ctx, evt); err != nil {
 		u.log.Error("authz.publish_failed",
 			"authorizationId", item.Authorization.ID,
-			"email", maskEmail(cmd.Email))
+			"email", maskEmail(email))
 		return NotifyResult{}, fmt.Errorf("%w: %v", documents.ErrEventPublish, err)
 	}
 
 	u.log.Info("authz.notified",
 		"authorizationId", item.Authorization.ID,
-		"email", maskEmail(cmd.Email),
+		"email", maskEmail(email),
 		"correlationId", correlationID)
 
 	return NotifyResult{
