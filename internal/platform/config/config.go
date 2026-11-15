@@ -22,6 +22,11 @@ type Config struct {
 	AWSRegion       string
 	EventBusName    string
 	ProfileQueueURL string
+	Environment     string
+
+	// CORSAllowedOrigins son los orígenes exactos permitidos (sin `*`).
+	// Vacío = CORS deshabilitado (no se envían headers).
+	CORSAllowedOrigins []string
 
 	// Documents (certificado de afiliación).
 	// Opcionales en Load para no romper worker/relay ni tests existentes;
@@ -53,6 +58,84 @@ func getenv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// DefaultCORSAllowedOrigins son los 4 orígenes de desarrollo del frontend.
+var DefaultCORSAllowedOrigins = []string{
+	"http://localhost:3000",
+	"http://localhost:3001",
+	"http://localhost:5000",
+	"http://localhost:8080",
+}
+
+// currentEnvironment lee APP_ENV con fallback a ENVIRONMENT.
+// APP_ENV tiene prioridad para compatibilidad con el brief;
+// el repo históricamente usa ENVIRONMENT (ver cmd/api/main.go y .env).
+func currentEnvironment() string {
+	if v := strings.TrimSpace(os.Getenv("APP_ENV")); v != "" {
+		return v
+	}
+	return strings.TrimSpace(os.Getenv("ENVIRONMENT"))
+}
+
+// IsProductionEnv reporta si el entorno es producción.
+func IsProductionEnv(env string) bool {
+	e := strings.ToLower(strings.TrimSpace(env))
+	return e == "production" || e == "prod"
+}
+
+// normalizeCORSOrigin recorta espacios y barras finales.
+// La comparación sigue siendo exacta en esquema, host y puerto.
+func normalizeCORSOrigin(s string) string {
+	s = strings.TrimSpace(s)
+	return strings.TrimRight(s, "/")
+}
+
+// ParseCORSAllowedOrigins parsea CORS_ALLOWED_ORIGINS (coma-separado).
+func ParseCORSAllowedOrigins(raw string) []string {
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		n := normalizeCORSOrigin(p)
+		if n == "" {
+			continue
+		}
+		if _, ok := seen[n]; ok {
+			continue
+		}
+		seen[n] = struct{}{}
+		out = append(out, n)
+	}
+	return out
+}
+
+// resolveCORSAllowedOrigins aplica la regla:
+// 1) si CORS_ALLOWED_ORIGINS está definida (tras parsear no vacía o vacía
+// explícita) se usa tal cual; 2) si no está definida y el entorno es
+// producción, lista vacía (sin headers); 3) si no, los 4 por defecto.
+func resolveCORSAllowedOrigins(env string) []string {
+	if raw, defined := os.LookupEnv("CORS_ALLOWED_ORIGINS"); defined {
+		if parsed := ParseCORSAllowedOrigins(raw); len(parsed) > 0 {
+			return parsed
+		}
+		// Definida pero vacía o solo comas/espacios: denegar todo.
+		// Distingue de "no definida". Si solo trae "/" se normaliza a ""
+		// y también deniega.
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" {
+			// Variable presente pero vacía: cae a la regla por entorno
+			// (dev = defaults, prod = vacío) para no romper `VAR=` en local.
+		} else {
+			return nil
+		}
+	}
+	if IsProductionEnv(env) {
+		return nil
+	}
+	out := make([]string, len(DefaultCORSAllowedOrigins))
+	copy(out, DefaultCORSAllowedOrigins)
+	return out
 }
 
 // demoExtraProfiles lee DEMO_EXTRA_PROFILES (7 por defecto, 0 o más).
@@ -88,6 +171,7 @@ func Load() (Config, error) {
 		AWSRegion:             getenv("AWS_REGION", "us-east-1"),
 		EventBusName:          getenv("EVENT_BUS_NAME", "kenko-dev-bus"),
 		ProfileQueueURL:       strings.TrimSpace(os.Getenv("PROFILE_QUEUE_URL")),
+		Environment:           currentEnvironment(),
 		DocumentsBucketName:   strings.TrimSpace(os.Getenv("DOCUMENTS_BUCKET_NAME")),
 		JWTSecret:             strings.TrimSpace(os.Getenv("JWT_SECRET")),
 		SeedDemoData:          strings.EqualFold(strings.TrimSpace(os.Getenv("SEED_DEMO_DATA")), "true"),
@@ -137,5 +221,6 @@ func Load() (Config, error) {
 	if cfg.EventBusName == "" {
 		return Config{}, fmt.Errorf("EVENT_BUS_NAME es obligatorio")
 	}
+	cfg.CORSAllowedOrigins = resolveCORSAllowedOrigins(cfg.Environment)
 	return cfg, nil
 }

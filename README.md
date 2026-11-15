@@ -63,6 +63,24 @@ curl -X POST http://127.0.0.1:8080/authorizations/<id>/notify \
 Errores comunes: `401` token inválido/expirado o secreto distinto al de Auth;
 `404` el `sub` no tiene perfil (debe llegar por SQS `UserRegistered` o estar en `seed/demo_users.json`).
 
+## CORS
+
+Solo CORS, sin cambios de negocio. Middleware propio en `internal/platform/cors/cors.go`,
+registrado con `e.Pre` en `cmd/api/main.go:50` para que corra antes que la
+autenticación JWT (que vive en cada handler) e incluso en 404 del router.
+
+- Variable: `CORS_ALLOWED_ORIGINS` (orígenes completos separados por comas).
+  Ejemplo dev en `.env.example`: `http://localhost:3000,http://localhost:3001,http://localhost:5000,http://localhost:8080`.
+- Si no está definida y el entorno NO es producción: se usan esos 4 por defecto.
+  Si no está definida y el entorno ES producción (`production`/`prod` en `APP_ENV` o `ENVIRONMENT`): no se envían headers (todo denegado).
+- Comparación exacta (esquema+host+puerto, sin barra final, sin `*`).
+  Al desplegar el frontend solo se cambia el valor de la variable a su URL real.
+- Origen permitido: `Access-Control-Allow-Origin: <origen>` + `Vary: Origin` +
+  `Access-Control-Expose-Headers: Content-Disposition, X-Correlation-Id`.
+- Preflight `OPTIONS`: `204` con `Allow-Methods: GET, POST, PATCH, OPTIONS`,
+  `Allow-Headers: Authorization, Content-Type, Accept, X-Correlation-Id`,
+  `Max-Age: 600`, sin exigir token. Sin credenciales.
+
 ## Notas
 
 - `MONGODB_URI` (Docker) tiene prioridad si está bien formada; si no, se usa `MONGO_ATLAS_URI` (ver `internal/platform/config/config.go`). Las URIs nunca se registran en logs.

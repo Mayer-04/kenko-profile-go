@@ -14,6 +14,8 @@ import (
 	"github.com/Mayer-04/kenko-profile-go/internal/documents/authzapi"
 	dochistoryapi "github.com/Mayer-04/kenko-profile-go/internal/documents/historyapi"
 	dochttpapi "github.com/Mayer-04/kenko-profile-go/internal/documents/httpapi"
+	platformconfig "github.com/Mayer-04/kenko-profile-go/internal/platform/config"
+	platformcors "github.com/Mayer-04/kenko-profile-go/internal/platform/cors"
 	"github.com/Mayer-04/kenko-profile-go/internal/profile/httpapi"
 	"github.com/Mayer-04/kenko-profile-go/internal/seed"
 	"github.com/labstack/echo/v5"
@@ -48,6 +50,10 @@ func main() {
 	seedDemoData(ctx, deps)
 
 	e := echo.New()
+	// CORS antes que todo (incluida la autenticación JWT que vive en cada
+	// handler). e.Pre corre incluso en 404 del router, por eso los errores
+	// 401/404/500 también llevan los headers cuando el origen es permitido.
+	e.Pre(platformcors.Middleware(deps.Config.CORSAllowedOrigins))
 	httpapi.RegisterRoutes(e, httpapi.NewHandler(deps.Service))
 	dochttpapi.RegisterRoutes(e, docHandler)
 	dochistoryapi.RegisterRoutes(e, historyHandler)
@@ -74,14 +80,14 @@ func main() {
 }
 
 // seedDemoData siembra citas y autorizaciones solo si SEED_DEMO_DATA=true.
-// Se niega en producción; si el archivo no es válido o la siembra falla,
-// registra un aviso y deja que el servidor arranque igual.
+// Se niega en producción (APP_ENV/ENVIRONMENT); si el archivo no es válido
+// o la siembra falla, registra un aviso y deja que el servidor arranque igual.
 func seedDemoData(ctx context.Context, deps *app.Deps) {
 	if !deps.Config.SeedDemoData {
 		deps.Log.Info("seed.omitido_flag", "hint", "SEED_DEMO_DATA!=true en .env; el api arranca sin sembrar")
 		return
 	}
-	if env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT"))); env == "production" || env == "prod" {
+	if platformconfig.IsProductionEnv(deps.Config.Environment) {
 		deps.Log.Warn("seed.omitido_produccion")
 		return
 	}
