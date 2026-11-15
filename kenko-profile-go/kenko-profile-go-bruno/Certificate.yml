@@ -1,0 +1,18 @@
+info:
+  name: Certificate
+  type: http
+  seq: 1
+
+http:
+  method: POST
+  url: http://127.0.0.1:8080/certificates
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImhzMjU2LTAxIn0.eyJzaWQiOiIwMWExYzMwZC05ZGM3LTczYWEtYTM1Yi01NDQ2OWZiNjhhYmQiLCJzdWIiOiIwMWExYzMwYy1jN2M3LTc3NjQtODE2Zi1kN2VhNDU3OTRmOGQiLCJpc3MiOiJrZW5rby5hdXRoIiwiYXVkIjoia2Vua28tYXBpIiwianRpIjoiMDFhMWMzMGQtOWRjNy03M2FhLWEzNWItNGY5Y2JhOTY3YzJkIiwiaWF0IjoxNzk0MjczODExLCJleHAiOjE3OTQyNzQ3MTF9.vJxA13PyUoK-xq32GTaIA5xmr8cUxGKlmaJdn8PbANo
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

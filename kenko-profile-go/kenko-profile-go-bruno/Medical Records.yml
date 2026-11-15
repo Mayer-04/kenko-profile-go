@@ -1,0 +1,18 @@
+info:
+  name: Medical Records
+  type: http
+  seq: 2
+
+http:
+  method: POST
+  url: http://127.0.0.1:8080/medical-history
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImhzMjU2LTAxIn0.eyJzaWQiOiIwMWExYzMxZS1jNjUyLTc3ZDUtYmJjMy1lYjg0NWYyM2FlYWIiLCJzdWIiOiIwMWExYzMwYy1jN2M3LTc3NjQtODE2Zi1kN2VhNDU3OTRmOGQiLCJpc3MiOiJrZW5rby5hdXRoIiwiYXVkIjoia2Vua28tYXBpIiwianRpIjoiMDFhMWMzMWUtYzY1Mi03N2Q1LWJiYzMtZTE1ZmRmYWRmZDYzIiwiaWF0IjoxNzk0Mjc0OTM2LCJleHAiOjE3OTQyNzU4MzZ9.0YYEJZOjvtNEShrcHcFqKjyOSx_gCj0g6xEbzopPwqg
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

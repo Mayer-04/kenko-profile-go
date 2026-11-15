@@ -1,0 +1,22 @@
+info:
+  name: Authorization
+  type: http
+  seq: 3
+
+http:
+  method: POST
+  url: http://127.0.0.1:8080/authorizations/:id/notify
+  params:
+    - name: id
+      value: 01a1c31e-1c58-7df2-aa00-36e32d71e929
+      type: path
+  auth:
+    type: bearer
+    token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImhzMjU2LTAxIn0.eyJzaWQiOiIwMWExYzMxZS1jNjUyLTc3ZDUtYmJjMy1lYjg0NWYyM2FlYWIiLCJzdWIiOiIwMWExYzMwYy1jN2M3LTc3NjQtODE2Zi1kN2VhNDU3OTRmOGQiLCJpc3MiOiJrZW5rby5hdXRoIiwiYXVkIjoia2Vua28tYXBpIiwianRpIjoiMDFhMWMzMWUtYzY1Mi03N2Q1LWJiYzMtZTE1ZmRmYWRmZDYzIiwiaWF0IjoxNzk0Mjc0OTM2LCJleHAiOjE3OTQyNzU4MzZ9.0YYEJZOjvtNEShrcHcFqKjyOSx_gCj0g6xEbzopPwqg
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
