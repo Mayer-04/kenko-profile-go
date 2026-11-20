@@ -17,6 +17,7 @@ import (
 	"github.com/Mayer-04/kenko-profile-go/internal/profile/httpapi"
 	"github.com/Mayer-04/kenko-profile-go/internal/seed"
 	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
 func main() {
@@ -48,6 +49,10 @@ func main() {
 	seedDemoData(ctx, deps)
 
 	e := echo.New()
+	e.Use(middleware.Recover())
+	// Dev-only: frontend en local consume la IP pública de ECS.
+	// Sin prod no restringimos origen; en prod habría que listar el dominio.
+	e.Use(middleware.CORS("*"))
 	httpapi.RegisterRoutes(e, httpapi.NewHandler(deps.Service))
 	dochttpapi.RegisterRoutes(e, docHandler)
 	dochistoryapi.RegisterRoutes(e, historyHandler)
