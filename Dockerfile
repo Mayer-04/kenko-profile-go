@@ -9,9 +9,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api \
- && CGO_ENABLED=0 go build -trimpath -o /out/worker ./cmd/worker \
- && CGO_ENABLED=0 go build -trimpath -o /out/relay ./cmd/relay
+RUN GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o /out/api ./cmd/api \
+ && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o /out/worker ./cmd/worker \
+ && GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o /out/relay ./cmd/relay
 
 FROM alpine:3.22
 
@@ -23,6 +23,9 @@ RUN apk add --no-cache ca-certificates su-exec \
 COPY --from=build /out/ /usr/local/bin/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint
 RUN chmod +x /usr/local/bin/entrypoint
+
+EXPOSE 8080
+STOPSIGNAL SIGTERM
 
 # Sin USER: el entry point empieza como root (para leer los montajes de solo
 # lectura del host) y ejecuta el proceso como kenko.

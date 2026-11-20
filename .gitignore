@@ -75,3 +75,4 @@ Desktop.ini
 
 /secrets/
 mongo/replica.key
+DEPLOYMENT_profile.md

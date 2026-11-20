@@ -54,6 +54,9 @@ func run() error {
 	e := echo.New()
 	e.Logger = logger
 	e.Use(middleware.Recover())
+	// Dev-only: frontend en local (localhost) consume la IP pública de ECS.
+	// Sin prod no restringimos origen; en prod habría que listar el dominio.
+	e.Use(middleware.CORS("*"))
 	e.HTTPErrorHandler = httpapi.NewErrorHandler(logger)
 	httpapi.RegisterRoutes(e, httpapi.NewHandler(service, logger))
 
