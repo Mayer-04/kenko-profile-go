@@ -25,7 +25,7 @@ func signTestToken(t *testing.T, secret, userID string, exp time.Time) string {
 	t.Helper()
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`))
 	payload, _ := json.Marshal(map[string]any{
-		"userId": userID, "firstName": "Maria", "email": "m@example.com", "exp": exp.Unix(),
+		"sub": userID, "iss": "kenko.auth", "aud": "kenko-api", "jti": "01a1f756-0000-7000-8000-000000000001", "iat": exp.Add(-time.Hour).Unix(), "userId": userID, "firstName": "Maria", "email": "m@example.com", "exp": exp.Unix(),
 	})
 	payloadSeg := base64.RawURLEncoding.EncodeToString(payload)
 	mac := hmac.New(sha256.New, []byte(secret))

@@ -118,6 +118,7 @@ func hSnapshot() ProfileSnapshot {
 		LastName:             "Gómez",
 		DocumentType:         "CC",
 		DocumentNumber:       "1020304050",
+		Email:                "hist.snapshot@example.com",
 		AffiliationStartDate: time.Date(2024, 5, 10, 12, 0, 0, 0, time.UTC),
 	}
 }

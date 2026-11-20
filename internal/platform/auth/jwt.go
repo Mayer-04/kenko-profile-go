@@ -19,15 +19,30 @@ var (
 	ErrExpiredToken = errors.New("expired token")
 )
 
-// Claims mínimos que emite Authentication.
+// Contrato alineado con Auth/Appointments: HS256, iss=kenko.auth,
+// aud=kenko-api, secreto compartido, sub UUID v7, exp con leeway de 120s.
+//
+// Compatibilidad: se siguen aceptando los claims legacy userId, firstName
+// y email. Si userId falta, se usa sub como identificador; si firstName o
+// email faltan, cada caso de uso los resuelve desde el perfil en Mongo.
+const (
+	ExpectedIssuer   = "kenko.auth"
+	ExpectedAudience = "kenko-api"
+
+	// expLeeway tolera desfases de reloj entre servicios (120s como Auth).
+	expLeewaySeconds = 120
+)
+
+// Claims mínimos para operar. UserID siempre viene resuelto (claim userId
+// o sub); FirstName y Email pueden venir vacíos y se completan desde Mongo.
 type Claims struct {
 	UserID    string
 	FirstName string
 	Email     string
 }
 
-// ValidateToken valida un JWT HS256 con exp obligatorio y claims
-// userId, firstName y email. No registra nada (sin PII en logs).
+// ValidateToken valida un JWT HS256 del contrato Auth: firma, iss, aud,
+// exp (con leeway) y sub/userId UUID v7. No registra nada (sin PII en logs).
 func ValidateToken(tokenString, secret string) (Claims, error) {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
@@ -68,101 +83,120 @@ func ValidateToken(tokenString, secret string) (Claims, error) {
 	if err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-	var payload struct {
-		UserID    string `json:"userId"`
-		FirstName string `json:"firstName"`
-		Email     string `json:"email"`
-		Exp       *int64 `json:"exp"`
-	}
 	dec := json.NewDecoder(strings.NewReader(string(payloadJSON)))
 	dec.UseNumber()
 	var raw map[string]any
 	if err := dec.Decode(&raw); err != nil {
 		return Claims{}, ErrInvalidToken
 	}
-	rawBytes, _ := json.Marshal(raw)
-	if err := json.Unmarshal(rawBytes, &payload); err != nil {
-		// exp puede venir como float; reintento manual.
-		if !parseClaimsLoose(raw, &payload) {
-			return Claims{}, ErrInvalidToken
-		}
-	}
-	// exp puede venir como float64 si el primer parse lo truncó.
-	if payload.Exp == nil {
-		if !extractExp(raw, &payload) {
-			return Claims{}, ErrInvalidToken
-		}
-	}
-	if payload.Exp == nil {
+
+	if !validIssuer(raw) {
 		return Claims{}, ErrInvalidToken
 	}
-	if time.Now().Unix() >= *payload.Exp {
+	if !validAudience(raw) {
+		return Claims{}, ErrInvalidToken
+	}
+	exp, ok := extractExp(raw)
+	if !ok {
+		return Claims{}, ErrInvalidToken
+	}
+	if time.Now().Unix() > exp+expLeewaySeconds {
 		return Claims{}, ErrExpiredToken
 	}
-	userID := strings.TrimSpace(payload.UserID)
-	firstName := strings.TrimSpace(payload.FirstName)
-	email := strings.TrimSpace(payload.Email)
-	if userID == "" || firstName == "" || email == "" {
+
+	userID := firstNonEmpty(stringClaim(raw, "userId"), stringClaim(raw, "sub"))
+	if !isUUIDv7(userID) {
 		return Claims{}, ErrInvalidToken
 	}
-	if _, err := uuid.FromString(userID); err != nil {
+	email := strings.TrimSpace(stringClaim(raw, "email"))
+	if email != "" && !strings.Contains(email, "@") {
 		return Claims{}, ErrInvalidToken
 	}
-	if !strings.Contains(email, "@") {
-		return Claims{}, ErrInvalidToken
-	}
-	return Claims{UserID: userID, FirstName: firstName, Email: email}, nil
+	return Claims{
+		UserID:    strings.TrimSpace(userID),
+		FirstName: strings.TrimSpace(stringClaim(raw, "firstName")),
+		Email:     email,
+	}, nil
 }
 
-func parseClaimsLoose(raw map[string]any, out *struct {
-	UserID    string `json:"userId"`
-	FirstName string `json:"firstName"`
-	Email     string `json:"email"`
-	Exp       *int64 `json:"exp"`
-},
-) bool {
-	if v, ok := raw["userId"].(string); ok {
-		out.UserID = v
-	}
-	if v, ok := raw["firstName"].(string); ok {
-		out.FirstName = v
-	}
-	if v, ok := raw["email"].(string); ok {
-		out.Email = v
-	}
-	return extractExp(raw, out)
-}
-
-func extractExp(raw map[string]any, out *struct {
-	UserID    string `json:"userId"`
-	FirstName string `json:"firstName"`
-	Email     string `json:"email"`
-	Exp       *int64 `json:"exp"`
-},
-) bool {
-	v, ok := raw["exp"]
-	if !ok || v == nil {
+// validIssuer acepta kenko.auth (contrato acordado con Appointments/frontend).
+// También acepta kenko-auth porque es el default del código de Auth
+// (env.ts) y no está confirmado cuál de los dos tiene desplegado;
+// la confianza real la da la firma HMAC + aud + sub, no el iss.
+func validIssuer(raw map[string]any) bool {
+	iss, ok := raw["iss"].(string)
+	if !ok {
 		return false
 	}
-	var exp int64
+	switch strings.TrimSpace(iss) {
+	case ExpectedIssuer, "kenko-auth":
+		return true
+	}
+	return false
+}
+
+// validAudience acepta aud=kenko-api como string o dentro de un arreglo.
+func validAudience(raw map[string]any) bool {
+	switch aud := raw["aud"].(type) {
+	case string:
+		return strings.TrimSpace(aud) == ExpectedAudience
+	case []any:
+		for _, a := range aud {
+			if s, ok := a.(string); ok && strings.TrimSpace(s) == ExpectedAudience {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stringClaim lee un claim string sin fallar si viene de otro tipo.
+func stringClaim(raw map[string]any, key string) string {
+	if v, ok := raw[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// isUUIDv7 exige UUID parseable de versión 7 (contrato de Auth).
+func isUUIDv7(s string) bool {
+	id, err := uuid.FromString(strings.TrimSpace(s))
+	if err != nil {
+		return false
+	}
+	return id.Version() == 7
+}
+
+func extractExp(raw map[string]any) (int64, bool) {
+	v, ok := raw["exp"]
+	if !ok || v == nil {
+		return 0, false
+	}
 	switch n := v.(type) {
 	case json.Number:
 		i, err := n.Int64()
 		if err != nil {
-			return false
+			return 0, false
 		}
-		exp = i
+		return i, true
 	case float64:
-		exp = int64(n)
+		return int64(n), true
 	case int64:
-		exp = n
+		return n, true
 	case int:
-		exp = int64(n)
+		return int64(n), true
 	default:
-		return false
+		return 0, false
 	}
-	out.Exp = &exp
-	return true
 }
 
 // BearerToken extrae el token de "Authorization: Bearer <token>".

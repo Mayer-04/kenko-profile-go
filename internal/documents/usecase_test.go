@@ -111,6 +111,7 @@ func testSnapshot() ProfileSnapshot {
 		LastName:             "Gómez Rojas",
 		DocumentType:         "CC",
 		DocumentNumber:       "1020304050",
+		Email:                "maria.gomez@example.com",
 		AffiliationStartDate: time.Date(2024, 5, 10, 12, 0, 0, 0, time.UTC),
 	}
 }
@@ -135,8 +136,8 @@ func TestExecuteHappyPath(t *testing.T) {
 
 	corr, _ := uuid.NewV7()
 	res, err := uc.Execute(context.Background(), GenerateCommand{
-		UserID: snap.UserID, FirstName: "Maria Fernanda",
-		Email: "maria.gomez@example.com", CorrelationID: corr.String(),
+		UserID: snap.UserID, FirstName: "Otro Nombre",
+		Email: "otro@example.com", CorrelationID: corr.String(),
 	})
 	if err != nil {
 		t.Fatalf("feliz debería pasar: %v", err)
@@ -167,7 +168,8 @@ func TestExecuteHappyPath(t *testing.T) {
 	if evt.Metadata.EventID != eventID.String() || evt.Metadata.EventVersion != "1" || evt.Metadata.CorrelationID != corr.String() {
 		t.Fatalf("metadata incorrecta: %+v", evt.Metadata)
 	}
-	if evt.Data.CertificateID != certID.String() || evt.Data.UserID != snap.UserID || evt.Data.Email != "maria.gomez@example.com" {
+	// El email/nombre del evento salen del perfil en Mongo, no del token.
+	if evt.Data.CertificateID != certID.String() || evt.Data.UserID != snap.UserID || evt.Data.Email != snap.Email || evt.Data.FirstName != snap.FirstName {
 		t.Fatalf("data incorrecta: %+v", evt.Data)
 	}
 	if evt.Data.File.Bucket != "test-bucket" || evt.Data.File.Key != wantKey || evt.Data.File.ContentType != "application/pdf" {

@@ -98,8 +98,8 @@ func (u *GenerateCertificate) Execute(ctx context.Context, cmd GenerateCommand) 
 		Data: EventData{
 			CertificateID: certificateID,
 			UserID:        snapshot.UserID,
-			Email:         strings.TrimSpace(cmd.Email),
-			FirstName:     strings.TrimSpace(cmd.FirstName),
+			Email:         snapshot.Email,
+			FirstName:     snapshot.FirstName,
 			IssuedAt:      now.Format(time.RFC3339),
 			File: EventFile{
 				Bucket:      u.bucket,
@@ -118,13 +118,13 @@ func (u *GenerateCertificate) Execute(ctx context.Context, cmd GenerateCommand) 
 	if err := u.publisher.PublishCertificateGenerated(ctx, evt); err != nil {
 		u.log.Error("certificate.publish_failed",
 			"certificateId", certificateID,
-			"email", maskEmail(cmd.Email))
+			"email", maskEmail(snapshot.Email))
 		return GenerateResult{}, fmt.Errorf("%w: %v", ErrEventPublish, err)
 	}
 
 	u.log.Info("certificate.generated",
 		"certificateId", certificateID,
-		"email", maskEmail(cmd.Email),
+		"email", maskEmail(snapshot.Email),
 		"correlationId", correlationID)
 
 	return GenerateResult{

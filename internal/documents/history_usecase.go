@@ -109,8 +109,8 @@ func (u *GenerateHistory) Execute(ctx context.Context, cmd HistoryCommand) (Hist
 		Data: HistoryData{
 			PdfID:       pdfID,
 			UserID:      snapshot.UserID,
-			Email:       strings.TrimSpace(cmd.Email),
-			FirstName:   strings.TrimSpace(cmd.FirstName),
+			Email:       snapshot.Email,
+			FirstName:   snapshot.FirstName,
 			GeneratedAt: now.Format(time.RFC3339),
 			RecordCount: len(appointments),
 			File: EventFile{
@@ -129,13 +129,13 @@ func (u *GenerateHistory) Execute(ctx context.Context, cmd HistoryCommand) (Hist
 	if err := u.publisher.PublishMedicalHistoryGenerated(ctx, evt); err != nil {
 		u.log.Error("history.publish_failed",
 			"pdfId", pdfID,
-			"email", maskEmail(cmd.Email))
+			"email", maskEmail(snapshot.Email))
 		return HistoryResult{}, fmt.Errorf("%w: %v", ErrEventPublish, err)
 	}
 
 	u.log.Info("history.generated",
 		"pdfId", pdfID,
-		"email", maskEmail(cmd.Email),
+		"email", maskEmail(snapshot.Email),
 		"correlationId", correlationID)
 
 	return HistoryResult{

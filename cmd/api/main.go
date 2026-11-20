@@ -53,6 +53,15 @@ func main() {
 	// Dev-only: frontend en local consume la IP pública de ECS.
 	// Sin prod no restringimos origen; en prod habría que listar el dominio.
 	e.Use(middleware.CORS("*"))
+	// Propaga X-Correlation-Id en la respuesta para trazabilidad con el frontend.
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if v := strings.TrimSpace(c.Request().Header.Get("X-Correlation-Id")); v != "" {
+				c.Response().Header().Set("X-Correlation-Id", v)
+			}
+			return next(c)
+		}
+	})
 	httpapi.RegisterRoutes(e, httpapi.NewHandler(deps.Service))
 	dochttpapi.RegisterRoutes(e, docHandler)
 	dochistoryapi.RegisterRoutes(e, historyHandler)

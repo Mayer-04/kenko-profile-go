@@ -102,8 +102,8 @@ func (u *NotifyAuthorization) Execute(ctx context.Context, cmd NotifyCommand) (N
 			CorrelationID: correlationID,
 		},
 		Data: NotifyData{
-			Email:             strings.TrimSpace(cmd.Email),
-			FirstName:         strings.TrimSpace(cmd.FirstName),
+			Email:             snapshot.Email,
+			FirstName:         snapshot.FirstName,
 			AuthorizationType: item.Authorization.Type.Label(),
 			Status:            item.Authorization.Status.Label(),
 			ChangedAt:         now.Format(time.RFC3339),
@@ -123,13 +123,13 @@ func (u *NotifyAuthorization) Execute(ctx context.Context, cmd NotifyCommand) (N
 	if err := u.publisher.PublishAuthorizationStatusChanged(ctx, evt); err != nil {
 		u.log.Error("authz.publish_failed",
 			"authorizationId", item.Authorization.ID,
-			"email", maskEmail(cmd.Email))
+			"email", maskEmail(snapshot.Email))
 		return NotifyResult{}, fmt.Errorf("%w: %v", documents.ErrEventPublish, err)
 	}
 
 	u.log.Info("authz.notified",
 		"authorizationId", item.Authorization.ID,
-		"email", maskEmail(cmd.Email),
+		"email", maskEmail(snapshot.Email),
 		"correlationId", correlationID)
 
 	return NotifyResult{
